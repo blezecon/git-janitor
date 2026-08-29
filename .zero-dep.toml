@@ -1,0 +1,18 @@
+# Zero Dependency Hackathon Metadata File
+
+# Track Selection: A, B, C, D, E, or F
+track = "A"
+
+# One-line summary pitch of what your project does
+pitch = "A lightning-fast, zero-dependency CLI log analyzer and metric extractor built entirely in Rust std."
+
+# Target language and runtime/compiler version
+language = "rust"
+toolchain = "1.98.0"
+
+# Optional Bonus Challenges Attempted
+[bonuses]
+single_file = true        # +5: Entire implementation in a single source file
+reproducible_build = true # +5: Byte-identical output hashes published
+package_killer = true     # +3: Cleanly replaced popular crate(s) documented in STDLIB.md
+stdlib_log = true         # +3: 10+ real stdlib-for-package substitutions in STDLIB.md
