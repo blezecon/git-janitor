@@ -22,12 +22,12 @@ test: build
 # Extract the compiled reproducible binary out to the host
 extract-binary: build
 	mkdir -p $(OUTPUT_DIR)
-	$(CONTAINER_ENGINE) run --rm -v $(PWD)/$(OUTPUT_DIR):/host-out $(IMAGE_NAME) cp /src/result/bin/git-janitor /host-out/
+	$(CONTAINER_ENGINE) run --rm -v $(PWD)/$(OUTPUT_DIR):/host-out:Z $(IMAGE_NAME) cp /src/result/bin/git-janitor /host-out/
 	@echo "Binary extracted to $(OUTPUT_DIR)/git-janitor"
 
 # Run the tool against the current directory
 run: build
-	$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/repo -w /repo $(IMAGE_NAME)
+	$(CONTAINER_ENGINE) run --rm -it -v $(PWD):/repo:Z -w /repo $(IMAGE_NAME)
 
 # Clean build artifacts and container image
 clean:
