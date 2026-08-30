@@ -287,7 +287,7 @@ pub mod inflate {
     pub fn inflate_raw(data: &[u8]) -> Result<Vec<u8>, InflateError> {
         let mut reader = BitReader::new(data);
         let mut out = Vec::new();
-        let max_len = crate::objects::max_inflate_len;
+        let max_len = crate::objects::MAX_INFLATE_LEN;
 
         loop {
             let bfinal = reader.read_bits(1)?;
@@ -442,7 +442,7 @@ pub mod objects {
     use std::rc::Rc;
 
     /// 256 MiB maximum guard for decompressed objects.
-    pub const max_inflate_len: usize = 256 * 1024 * 1024;
+    pub const MAX_INFLATE_LEN: usize = 256 * 1024 * 1024;
 
     /// Computes a standard SHA-1 hash over raw bytes.
     pub fn sha1(data: &[u8]) -> [u8; 20] {
@@ -942,22 +942,18 @@ pub mod objects {
 
     fn apply_delta(base: &[u8], delta: &[u8]) -> Result<Vec<u8>, ObjError> {
         let mut pos = 0;
-        let mut shift = 0;
-        let mut _base_size = 0usize;
         loop {
             if pos >= delta.len() {
                 return Err(ObjError::Corrupt("truncated delta header".into()));
             }
             let b = delta[pos];
             pos += 1;
-            _base_size |= ((b & 0x7F) as usize) << shift;
-            shift += 7;
             if (b & 0x80) == 0 {
                 break;
             }
         }
 
-        shift = 0;
+        let mut shift = 0;
         let mut result_size = 0usize;
         loop {
             if pos >= delta.len() {
@@ -1423,20 +1419,6 @@ pub mod repo {
         }
 
         if s.len() >= 7 && s.len() < 40 && s.chars().all(|c| c.is_ascii_hexdigit()) {
-            let prefix: Vec<u8> = s
-                .as_bytes()
-                .chunks(2)
-                .filter_map(|pair| {
-                    if pair.len() == 2 {
-                        let h = (pair[0] as char).to_digit(16)? as u8;
-                        let l = (pair[1] as char).to_digit(16)? as u8;
-                        Some((h << 4) | l)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            let prefix_len = prefix.len();
             let obj_root = repo.git_dir.join("objects");
             if let Ok(rd) = std::fs::read_dir(&obj_root) {
                 'outer: for bucket in rd.flatten() {
@@ -1461,7 +1443,6 @@ pub mod repo {
                     }
                 }
             }
-            let _ = prefix_len;
         }
 
         if let Ok(oid) = oid_of_ref(repo, &format!("refs/heads/{s}")) {
