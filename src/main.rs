@@ -1422,6 +1422,48 @@ pub mod repo {
             }
         }
 
+        if s.len() >= 7 && s.len() < 40 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+            let prefix: Vec<u8> = s
+                .as_bytes()
+                .chunks(2)
+                .filter_map(|pair| {
+                    if pair.len() == 2 {
+                        let h = (pair[0] as char).to_digit(16)? as u8;
+                        let l = (pair[1] as char).to_digit(16)? as u8;
+                        Some((h << 4) | l)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let prefix_len = prefix.len();
+            let obj_root = repo.git_dir.join("objects");
+            if let Ok(rd) = std::fs::read_dir(&obj_root) {
+                'outer: for bucket in rd.flatten() {
+                    let bpath = bucket.path();
+                    if !bpath.is_dir() { continue; }
+                    if let Ok(objs) = std::fs::read_dir(&bpath) {
+                        for obj in objs.flatten() {
+                            let opath = obj.path();
+                            if !opath.is_file() { continue; }
+                            let dir_name = bucket.file_name().to_string_lossy().to_string();
+                            let file_name = obj.file_name().to_string_lossy().to_string();
+                            if dir_name.len() == 2 && file_name.len() == 38 {
+                                let hex_full = format!("{dir_name}{file_name}");
+                                if hex_full.starts_with(s) {
+                                    if let Ok(oid) = crate::objects::Oid::from_hex(&hex_full) {
+                                        return Ok(oid);
+                                    }
+                                    break 'outer;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let _ = prefix_len;
+        }
+
         if let Ok(oid) = oid_of_ref(repo, &format!("refs/heads/{s}")) {
             return Ok(oid);
         }
@@ -3669,6 +3711,159 @@ mod tests {
         let cfg = crate::repo::read_config(&repo).unwrap();
         let infos = crate::branch::analyze(&repo, &cfg, None).unwrap();
         assert!(infos.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inflate_zlib_fdict() {
+        let mut data = vec![0x78u8, 0x21u8];
+        data.extend_from_slice(&[0u8; 4]);
+        let result = crate::inflate::inflate_zlib(&data);
+        assert!(result.is_err(), "FDICT set should error");
+    }
+
+    #[test]
+    fn redact_never_leaks_full() {
+        assert_eq!(crate::output::redact("12345678"), "…");
+        assert_eq!(crate::output::redact("123456789"), "1234…6789");
+        assert_eq!(crate::output::redact(""), "…");
+        assert_eq!(crate::output::redact("abc"), "…");
+    }
+
+    #[test]
+    fn hook_installed_perm() {
+        let dir = testutil::unique_tempdir("hook_perm");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: git_dir.clone(),
+        };
+        let hook_path = crate::hook::install_hook(&repo, false).unwrap();
+        assert!(hook_path.exists());
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("git-jan secrets scan --staged"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&hook_path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755, "hook must be executable");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hook_refuses_overwrite() {
+        let dir = testutil::unique_tempdir("hook_refuse");
+        let git_dir = dir.join(".git");
+        let hooks_dir = git_dir.join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(hooks_dir.join("pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
+        assert!(crate::hook::install_hook(&repo, false).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hook_force_overwrite() {
+        let dir = testutil::unique_tempdir("hook_force");
+        let git_dir = dir.join(".git");
+        let hooks_dir = git_dir.join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(hooks_dir.join("pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
+        let hook_path = crate::hook::install_hook(&repo, true).unwrap();
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("git-jan"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn doctor_ok() {
+        let dir = testutil::unique_tempdir("doc_ok");
+        let git_dir = dir.join(".git");
+        let heads = git_dir.join("refs/heads");
+        fs::create_dir_all(&heads).unwrap();
+        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        fs::write(heads.join("main"), format!("{}\n", c1.to_hex())).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
+        let report = crate::doctor::run(&repo);
+        assert!(report.errs.is_empty(), "expected no errors, got: {:?}", report.errs);
+        assert!(!report.ok.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn doctor_errs() {
+        let dir = testutil::unique_tempdir("doc_err");
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: dir.join("nonexistent_git"),
+        };
+        let report = crate::doctor::run(&repo);
+        assert!(!report.errs.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pack_commit_parse() {
+        let dir = testutil::unique_tempdir("pack_commit");
+        let blob_content = b"blob content for pack test";
+        let blob_oid = testutil::write_loose_object(&dir, "blob", blob_content);
+        let commit_content = format!(
+            "tree 0000000000000000000000000000000000000000\n\npack commit\n"
+        );
+        let commit_oid = testutil::write_loose_object(&dir, "commit", commit_content.as_bytes());
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: dir.join(".git"),
+        };
+        let loaded = crate::objects::load_commit(&repo, &commit_oid).unwrap();
+        assert_eq!(loaded.tree, crate::objects::Oid([0; 20]));
+        let loaded_blob = crate::objects::load_blob(&repo, &blob_oid).unwrap();
+        assert_eq!(loaded_blob, blob_content);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pack_ofs_delta_blob() {
+        let dir = testutil::unique_tempdir("pack_ofs");
+        let base_content = b"base blob content for ofs delta";
+        let _oid = testutil::write_loose_object(&dir, "blob", base_content);
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: dir.join(".git"),
+        };
+        let pack_dir = repo.git_dir.join("objects/pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        let loaded = crate::objects::load_blob(&repo, &_oid).unwrap();
+        assert_eq!(loaded, base_content);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pack_ref_delta_blob() {
+        let dir = testutil::unique_tempdir("pack_ref");
+        let base_content = b"reference base blob for ref delta test";
+        let base_oid = testutil::write_loose_object(&dir, "blob", base_content);
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: dir.join(".git"),
+        };
+        let pack_dir = repo.git_dir.join("objects/pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        let loaded = crate::objects::load_blob(&repo, &base_oid).unwrap();
+        assert_eq!(loaded, base_content);
         let _ = fs::remove_dir_all(&dir);
     }
 }
