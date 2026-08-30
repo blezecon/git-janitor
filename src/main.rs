@@ -2415,10 +2415,7 @@ exec git-jan secrets scan --staged
         Ok(hook_file)
     }
 }
-
 pub mod doctor {
-    use std::fs;
-
     /// Diagnostics report output.
     pub struct DoctorReport {
         pub ok: Vec<String>,
