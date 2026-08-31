@@ -5,7 +5,8 @@
 #   irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1 | iex
 #
 # Uninstall:
-#   irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1 | iex -args "-Uninstall"
+#   irm https://raw.githubusercontent.com/blezecon/git-janitor/release/uninstall.ps1 | iex
+#   (or: & ([scriptblock]::Create((irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1))) -Uninstall)
 
 [CmdletBinding()]
 param(

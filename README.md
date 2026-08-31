@@ -197,9 +197,10 @@ curl -fsSL https://raw.githubusercontent.com/blezecon/git-janitor/release/instal
 *(or manually remove `~/.local/bin/git-janitor` and `~/.local/bin/git-jan`)*
 
 ### Windows (PowerShell)
-```sh
-irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1 | iex -args "-Uninstall"
+```powershell
+irm https://raw.githubusercontent.com/blezecon/git-janitor/release/uninstall.ps1 | iex
 ```
+*(or via install script: `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1))) -Uninstall`)*
 
 ---
 
