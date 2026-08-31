@@ -1,6 +1,7 @@
 pub mod testdata {
     pub const ZLIB_HELLO: &str = "7801cb48cdc9c95728cf2fca49e102001e720467";
-    pub const ZLIB_MULTILINE: &str = "7801011500eaff6c696e6520310a6c696e6520320a6c696e6520330a4831060d";
+    pub const ZLIB_MULTILINE: &str =
+        "7801011500eaff6c696e6520310a6c696e6520320a6c696e6520330a4831060d";
     pub const INDEX_V2_HEX: &str = "444952430000000200000001000000000000000000000000000000000000000000000000000081a400000000000000000000000c2bb4830536366da53082b9870768eec3292fe997000866696c652e747874000000000000000000000000000000000000000000000000000000000000000000000000";
 }
 
@@ -63,7 +64,11 @@ pub mod testutil {
     }
 
     /// Writes a mock loose object into a git repository.
-    pub fn write_loose_object(repo_path: &Path, obj_type: &str, content: &[u8]) -> crate::objects::Oid {
+    pub fn write_loose_object(
+        repo_path: &Path,
+        obj_type: &str,
+        content: &[u8],
+    ) -> crate::objects::Oid {
         let mut raw = Vec::new();
         raw.extend_from_slice(obj_type.as_bytes());
         raw.push(b' ');
@@ -265,19 +270,19 @@ pub mod inflate {
     }
 
     const BASE_LEN: [u16; 29] = [
-        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99,
-        115, 131, 163, 195, 227, 258,
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115,
+        131, 163, 195, 227, 258,
     ];
     const EXTRA_LEN_BITS: [u8; 29] = [
         0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
     ];
     const BASE_DIST: [u16; 30] = [
-        1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
-        1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+        1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
+        2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
     ];
     const EXTRA_DIST_BITS: [u8; 30] = [
-        0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
-        12, 13, 13,
+        0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12,
+        13, 13,
     ];
     const CL_ORDER: [usize; 19] = [
         16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
@@ -527,7 +532,10 @@ pub mod objects {
         /// Parses a 40-character hexadecimal string into an OID.
         pub fn from_hex(s: &str) -> Result<Oid, ObjError> {
             if s.len() != 40 {
-                return Err(ObjError::Corrupt(format!("invalid hex length: {}", s.len())));
+                return Err(ObjError::Corrupt(format!(
+                    "invalid hex length: {}",
+                    s.len()
+                )));
             }
             let mut bytes = [0u8; 20];
             for (i, b) in bytes.iter_mut().enumerate() {
@@ -535,12 +543,14 @@ pub mod objects {
                     .chars()
                     .nth(i * 2)
                     .and_then(|c| c.to_digit(16))
-                    .ok_or_else(|| ObjError::Corrupt("invalid hex character".into()))? as u8;
+                    .ok_or_else(|| ObjError::Corrupt("invalid hex character".into()))?
+                    as u8;
                 let low = s
                     .chars()
                     .nth(i * 2 + 1)
                     .and_then(|c| c.to_digit(16))
-                    .ok_or_else(|| ObjError::Corrupt("invalid hex character".into()))? as u8;
+                    .ok_or_else(|| ObjError::Corrupt("invalid hex character".into()))?
+                    as u8;
                 *b = (high << 4) | low;
             }
             Ok(Oid(bytes))
@@ -616,18 +626,16 @@ pub mod objects {
     pub fn object_path(repo: &crate::repo::Repo, oid: &Oid) -> Option<PathBuf> {
         let hex = oid.to_hex();
         let path = repo.git_dir.join("objects").join(&hex[..2]).join(&hex[2..]);
-        if path.is_file() {
-            Some(path)
-        } else {
-            None
-        }
+        if path.is_file() { Some(path) } else { None }
     }
 
     /// Loads and parses a Git object by OID.
     pub fn load_object(repo: &crate::repo::Repo, oid: &Oid) -> Result<Obj, ObjError> {
         let cfg = crate::repo::read_config(repo).map_err(|e| ObjError::Corrupt(format!("{e}")))?;
         if cfg.sha256 {
-            return Err(ObjError::Unsupported("sha256 repos are not supported".into()));
+            return Err(ObjError::Unsupported(
+                "sha256 repos are not supported".into(),
+            ));
         }
         if let Some(cached) = CACHE.with(|c| c.borrow().get(&oid.0).cloned()) {
             return Ok((*cached).clone());
@@ -658,7 +666,11 @@ pub mod objects {
             "tree" => Obj::Tree(parse_tree(content)?),
             "blob" => Obj::Blob(content.to_vec()),
             "tag" => Obj::Tag(parse_tag(content)?),
-            other => return Err(ObjError::Unsupported(format!("unknown object type: {other}"))),
+            other => {
+                return Err(ObjError::Unsupported(format!(
+                    "unknown object type: {other}"
+                )));
+            }
         };
 
         CACHE.with(|c| c.borrow_mut().insert(oid.0, Rc::new(obj.clone())));
@@ -793,12 +805,17 @@ pub mod objects {
         if idx_data.len() < 4 + 4 + 256 * 4 + 20 {
             return Err(ObjError::Corrupt("idx file too short".into()));
         }
-        if &idx_data[0..4] != b"\xfftOc" || u32::from_be_bytes(idx_data[4..8].try_into().unwrap()) != 2 {
-            return Err(ObjError::Unsupported("unsupported pack index format".into()));
+        if &idx_data[0..4] != b"\xfftOc"
+            || u32::from_be_bytes(idx_data[4..8].try_into().unwrap()) != 2
+        {
+            return Err(ObjError::Unsupported(
+                "unsupported pack index format".into(),
+            ));
         }
 
         let fanout_end = 8 + 256 * 4;
-        let total_objs = u32::from_be_bytes(idx_data[fanout_end - 4..fanout_end].try_into().unwrap()) as usize;
+        let total_objs =
+            u32::from_be_bytes(idx_data[fanout_end - 4..fanout_end].try_into().unwrap()) as usize;
         let oids_start = fanout_end;
         let oids_end = oids_start + total_objs * 20;
         let _crc_end = oids_end + total_objs * 4;
@@ -873,10 +890,26 @@ pub mod objects {
         }
 
         match obj_type {
-            1 => Ok(("commit".into(), crate::inflate::inflate_zlib(&pack_data[pos..]).map_err(|e| ObjError::Corrupt(format!("{e}")))?)),
-            2 => Ok(("tree".into(), crate::inflate::inflate_zlib(&pack_data[pos..]).map_err(|e| ObjError::Corrupt(format!("{e}")))?)),
-            3 => Ok(("blob".into(), crate::inflate::inflate_zlib(&pack_data[pos..]).map_err(|e| ObjError::Corrupt(format!("{e}")))?)),
-            4 => Ok(("tag".into(), crate::inflate::inflate_zlib(&pack_data[pos..]).map_err(|e| ObjError::Corrupt(format!("{e}")))?)),
+            1 => Ok((
+                "commit".into(),
+                crate::inflate::inflate_zlib(&pack_data[pos..])
+                    .map_err(|e| ObjError::Corrupt(format!("{e}")))?,
+            )),
+            2 => Ok((
+                "tree".into(),
+                crate::inflate::inflate_zlib(&pack_data[pos..])
+                    .map_err(|e| ObjError::Corrupt(format!("{e}")))?,
+            )),
+            3 => Ok((
+                "blob".into(),
+                crate::inflate::inflate_zlib(&pack_data[pos..])
+                    .map_err(|e| ObjError::Corrupt(format!("{e}")))?,
+            )),
+            4 => Ok((
+                "tag".into(),
+                crate::inflate::inflate_zlib(&pack_data[pos..])
+                    .map_err(|e| ObjError::Corrupt(format!("{e}")))?,
+            )),
             6 => {
                 let mut b = pack_data[pos];
                 pos += 1;
@@ -909,14 +942,19 @@ pub mod objects {
                     Obj::Commit(c) => ("commit".into(), serialize_commit(&c)),
                     Obj::Tree(t) => ("tree".into(), serialize_tree(&t)),
                     Obj::Blob(b) => ("blob".into(), b),
-                    Obj::Tag(t) => ("tag".into(), format!("object {}\n", t.to_hex()).into_bytes()),
+                    Obj::Tag(t) => (
+                        "tag".into(),
+                        format!("object {}\n", t.to_hex()).into_bytes(),
+                    ),
                 };
                 let delta_instructions = crate::inflate::inflate_zlib(&pack_data[pos..])
                     .map_err(|e| ObjError::Corrupt(format!("delta zlib: {e}")))?;
                 let applied = apply_delta(&base_bytes, &delta_instructions)?;
                 Ok((base_type, applied))
             }
-            _ => Err(ObjError::Unsupported(format!("unknown pack entry type: {obj_type}"))),
+            _ => Err(ObjError::Unsupported(format!(
+                "unknown pack entry type: {obj_type}"
+            ))),
         }
     }
 
@@ -1423,11 +1461,15 @@ pub mod repo {
             if let Ok(rd) = std::fs::read_dir(&obj_root) {
                 'outer: for bucket in rd.flatten() {
                     let bpath = bucket.path();
-                    if !bpath.is_dir() { continue; }
+                    if !bpath.is_dir() {
+                        continue;
+                    }
                     if let Ok(objs) = std::fs::read_dir(&bpath) {
                         for obj in objs.flatten() {
                             let opath = obj.path();
-                            if !opath.is_file() { continue; }
+                            if !opath.is_file() {
+                                continue;
+                            }
                             let dir_name = bucket.file_name().to_string_lossy().to_string();
                             let file_name = obj.file_name().to_string_lossy().to_string();
                             if dir_name.len() == 2 && file_name.len() == 38 {
@@ -1573,7 +1615,9 @@ pub mod index {
 
         let version = u32::from_be_bytes(data[4..8].try_into().unwrap());
         if version != 2 && version != 3 && version != 4 {
-            return Err(IndexError::Unsupported(format!("unsupported index version: {version}")));
+            return Err(IndexError::Unsupported(format!(
+                "unsupported index version: {version}"
+            )));
         }
 
         let num_entries = u32::from_be_bytes(data[8..12].try_into().unwrap()) as usize;
@@ -1617,28 +1661,27 @@ pub mod index {
                         break;
                     }
                 }
-                let null_pos = data[pos..]
-                    .iter()
-                    .position(|&b| b == 0)
-                    .ok_or_else(|| IndexError::Corrupt("missing null terminator in v4 path".into()))?
-                    + pos;
+                let null_pos = data[pos..].iter().position(|&b| b == 0).ok_or_else(|| {
+                    IndexError::Corrupt("missing null terminator in v4 path".into())
+                })? + pos;
                 let suffix = std::str::from_utf8(&data[pos..null_pos])
                     .map_err(|_| IndexError::Corrupt("non-utf8 path in index".into()))?;
                 pos = null_pos + 1;
 
                 if strip_len > prev_path.len() {
-                    return Err(IndexError::Corrupt("v4 path prefix strip out of range".into()));
+                    return Err(IndexError::Corrupt(
+                        "v4 path prefix strip out of range".into(),
+                    ));
                 }
                 let base = &prev_path[..prev_path.len() - strip_len];
                 let full_path = format!("{base}{suffix}");
                 prev_path = full_path.clone();
                 full_path
             } else {
-                let null_pos = data[pos..]
-                    .iter()
-                    .position(|&b| b == 0)
-                    .ok_or_else(|| IndexError::Corrupt("missing null terminator in path".into()))?
-                    + pos;
+                let null_pos =
+                    data[pos..].iter().position(|&b| b == 0).ok_or_else(|| {
+                        IndexError::Corrupt("missing null terminator in path".into())
+                    })? + pos;
                 let path = std::str::from_utf8(&data[pos..null_pos])
                     .map_err(|_| IndexError::Corrupt("non-utf8 path in index".into()))?
                     .to_string();
@@ -2118,9 +2161,8 @@ COMMANDS:
                     }
                 }
 
-                let active_targets = (staged as usize)
-                    + (since.is_some() as usize)
-                    + (commit.is_some() as usize);
+                let active_targets =
+                    (staged as usize) + (since.is_some() as usize) + (commit.is_some() as usize);
                 if active_targets > 1 {
                     return Err(CliError::Parse(
                         "--staged, --since, and --commit are mutually exclusive".into(),
@@ -2338,7 +2380,9 @@ pub mod branch {
         } else {
             let candidates: Vec<&BranchInfo> = infos
                 .iter()
-                .filter(|b| !b.protected && !b.current && b.merged && b.has_upstream && b.ahead == 0)
+                .filter(|b| {
+                    !b.protected && !b.current && b.merged && b.has_upstream && b.ahead == 0
+                })
                 .collect();
             if candidates.is_empty() {
                 out.push_str("No cleanable branches found. No changes made.\n");
@@ -2384,7 +2428,10 @@ exec git-jan secrets scan --staged
             match self {
                 HookError::Io(e) => write!(f, "hook io error: {e}"),
                 HookError::Exists => {
-                    write!(f, "hook file exists. Use --force to overwrite existing hook")
+                    write!(
+                        f,
+                        "hook file exists. Use --force to overwrite existing hook"
+                    )
                 }
             }
         }
@@ -2407,7 +2454,9 @@ exec git-jan secrets scan --staged
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&hook_file).map_err(HookError::Io)?.permissions();
+            let mut perms = fs::metadata(&hook_file)
+                .map_err(HookError::Io)?
+                .permissions();
             perms.set_mode(0o755);
             fs::set_permissions(&hook_file, perms).map_err(HookError::Io)?;
         }
@@ -2432,9 +2481,13 @@ pub mod doctor {
         };
 
         if repo.git_dir.is_dir() {
-            report.ok.push(format!("Git directory found at {}", repo.git_dir.display()));
+            report
+                .ok
+                .push(format!("Git directory found at {}", repo.git_dir.display()));
         } else {
-            report.errs.push("Git directory not found or not accessible".into());
+            report
+                .errs
+                .push("Git directory not found or not accessible".into());
         }
 
         match crate::repo::read_config(repo) {
@@ -2448,26 +2501,41 @@ pub mod doctor {
         }
 
         match crate::repo::head(repo) {
-            Ok(crate::repo::HeadRef::Branch(b)) => report.ok.push(format!("HEAD points to branch '{b}'")),
-            Ok(crate::repo::HeadRef::Detached(oid)) => report.ok.push(format!("HEAD is detached at {oid}")),
-            Ok(crate::repo::HeadRef::Unborn) => report.warn.push("HEAD is unborn (empty repo)".into()),
+            Ok(crate::repo::HeadRef::Branch(b)) => {
+                report.ok.push(format!("HEAD points to branch '{b}'"))
+            }
+            Ok(crate::repo::HeadRef::Detached(oid)) => {
+                report.ok.push(format!("HEAD is detached at {oid}"))
+            }
+            Ok(crate::repo::HeadRef::Unborn) => {
+                report.warn.push("HEAD is unborn (empty repo)".into())
+            }
             Err(e) => report.errs.push(format!("Error reading HEAD: {e}")),
         }
 
         match crate::repo::local_branches(repo) {
-            Ok(branches) => report.ok.push(format!("Found {} local branch(es)", branches.len())),
-            Err(e) => report.errs.push(format!("Error reading local branches: {e}")),
+            Ok(branches) => report
+                .ok
+                .push(format!("Found {} local branch(es)", branches.len())),
+            Err(e) => report
+                .errs
+                .push(format!("Error reading local branches: {e}")),
         }
 
         match crate::index::staged_entries(repo) {
-            Ok(entries) => report.ok.push(format!("Index parsed successfully ({} staged entries)", entries.len())),
+            Ok(entries) => report.ok.push(format!(
+                "Index parsed successfully ({} staged entries)",
+                entries.len()
+            )),
             Err(e) => report.errs.push(format!("Error reading index: {e}")),
         }
 
         if let Ok(crate::repo::HeadRef::Branch(b)) = crate::repo::head(repo) {
             if let Ok(oid) = crate::repo::oid_of_ref(repo, &format!("refs/heads/{b}")) {
                 match crate::objects::load_commit(repo, &oid) {
-                    Ok(_) => report.ok.push("HEAD commit object verified in object database".into()),
+                    Ok(_) => report
+                        .ok
+                        .push("HEAD commit object verified in object database".into()),
                     Err(e) => report.errs.push(format!("Failed to load HEAD commit: {e}")),
                 }
             }
@@ -2485,13 +2553,25 @@ pub mod doctor {
     pub fn format_report(r: &DoctorReport) -> String {
         let mut out = String::from("git-janitor repository diagnostics:\n\n");
         for item in &r.ok {
-            out.push_str(&format!("  {} {}\n", crate::output::paint("✓", crate::output::GREEN), item));
+            out.push_str(&format!(
+                "  {} {}\n",
+                crate::output::paint("✓", crate::output::GREEN),
+                item
+            ));
         }
         for item in &r.warn {
-            out.push_str(&format!("  {} {}\n", crate::output::paint("⚠", crate::output::YELLOW), item));
+            out.push_str(&format!(
+                "  {} {}\n",
+                crate::output::paint("⚠", crate::output::YELLOW),
+                item
+            ));
         }
         for item in &r.errs {
-            out.push_str(&format!("  {} {}\n", crate::output::paint("✗", crate::output::RED), item));
+            out.push_str(&format!(
+                "  {} {}\n",
+                crate::output::paint("✗", crate::output::RED),
+                item
+            ));
         }
         out
     }
@@ -2524,15 +2604,33 @@ pub mod entropy {
     /// Checks if a token has high entropy suitable for secret detection.
     pub fn is_high_entropy(token: &str) -> bool {
         let trimmed = token.trim_matches(|c: char| {
-            c == '"' || c == '\'' || c == '.' || c == ',' || c == ';'
-                || c == ':' || c == '=' || c == '(' || c == ')'
-                || c == '[' || c == ']' || c == '{' || c == '}'
+            c == '"'
+                || c == '\''
+                || c == '.'
+                || c == ','
+                || c == ';'
+                || c == ':'
+                || c == '='
+                || c == '('
+                || c == ')'
+                || c == '['
+                || c == ']'
+                || c == '{'
+                || c == '}'
         });
         if trimmed.len() < TOKEN_MIN_LEN {
             return false;
         }
-        let valid = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-'
-            || c == '.' || c == '/' || c == '+' || c == '=' || c == '~';
+        let valid = |c: char| {
+            c.is_ascii_alphanumeric()
+                || c == '_'
+                || c == '-'
+                || c == '.'
+                || c == '/'
+                || c == '+'
+                || c == '='
+                || c == '~'
+        };
         if !trimmed.chars().all(valid) {
             return false;
         }
@@ -2547,7 +2645,14 @@ pub mod patterns {
     }
 
     fn is_valid_token_byte(b: u8) -> bool {
-        b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'/' || b == b'+' || b == b'=' || b == b'~'
+        b.is_ascii_alphanumeric()
+            || b == b'_'
+            || b == b'-'
+            || b == b'.'
+            || b == b'/'
+            || b == b'+'
+            || b == b'='
+            || b == b'~'
     }
 
     fn check_aws_key(line: &str) -> Option<&str> {
@@ -2555,7 +2660,10 @@ pub mod patterns {
         for i in 0..bytes.len() {
             if i + 20 <= bytes.len() && &bytes[i..i + 4] == b"AKIA" {
                 let rest = &bytes[i + 4..i + 20];
-                if rest.iter().all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+                if rest
+                    .iter()
+                    .all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit())
+                {
                     if let Ok(s) = std::str::from_utf8(&bytes[i..i + 20]) {
                         return Some(s);
                     }
@@ -2621,7 +2729,11 @@ pub mod patterns {
                 if i + prefix.len() <= bytes.len() && bytes[i..].starts_with(prefix) {
                     let rest = &bytes[i + prefix.len()..];
                     let mut end = 0;
-                    while end < rest.len() && (rest[end].is_ascii_alphanumeric() || rest[end] == b'-' || rest[end] == b'_') {
+                    while end < rest.len()
+                        && (rest[end].is_ascii_alphanumeric()
+                            || rest[end] == b'-'
+                            || rest[end] == b'_')
+                    {
                         end += 1;
                     }
                     if end >= 12 {
@@ -2661,7 +2773,10 @@ pub mod patterns {
         for i in 0..bytes.len() {
             if i + 39 <= bytes.len() && &bytes[i..i + 4] == b"AIza" {
                 let rest = &bytes[i + 4..i + 39];
-                if rest.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+                if rest
+                    .iter()
+                    .all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+                {
                     if let Ok(s) = std::str::from_utf8(&bytes[i..i + 39]) {
                         return Some(s);
                     }
@@ -2677,10 +2792,20 @@ pub mod patterns {
             if i + 6 <= bytes.len() && &bytes[i..i + 6] == b"Basic " {
                 let rest = &bytes[i + 6..];
                 let mut end = 0;
-                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                while end < rest.len()
+                    && rest[end] != b' '
+                    && rest[end] != b'\t'
+                    && rest[end] != b'\n'
+                    && rest[end] != b'\r'
+                    && rest[end] != b'"'
+                {
                     end += 1;
                 }
-                if end >= 4 && rest[..end].iter().all(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=') {
+                if end >= 4
+                    && rest[..end]
+                        .iter()
+                        .all(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+                {
                     if let Ok(s) = std::str::from_utf8(&bytes[i..i + 6 + end]) {
                         return Some(s);
                     }
@@ -2689,7 +2814,13 @@ pub mod patterns {
             if i + 7 <= bytes.len() && &bytes[i..i + 7] == b"Bearer " {
                 let rest = &bytes[i + 7..];
                 let mut end = 0;
-                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                while end < rest.len()
+                    && rest[end] != b' '
+                    && rest[end] != b'\t'
+                    && rest[end] != b'\n'
+                    && rest[end] != b'\r'
+                    && rest[end] != b'"'
+                {
                     end += 1;
                 }
                 if end >= 28 && rest[..end].iter().all(|&b| is_valid_token_byte(b)) {
@@ -2704,8 +2835,17 @@ pub mod patterns {
 
     fn check_key_value(line: &str) -> Option<(&str, &str)> {
         let keywords = [
-            "password", "passwd", "secret", "token", "api_key", "apikey",
-            "client_secret", "access_token", "private_key", "credential", "auth",
+            "password",
+            "passwd",
+            "secret",
+            "token",
+            "api_key",
+            "apikey",
+            "client_secret",
+            "access_token",
+            "private_key",
+            "credential",
+            "auth",
         ];
         let bytes = line.as_bytes();
         for kw in &keywords {
@@ -2724,7 +2864,11 @@ pub mod patterns {
                         if k < bytes.len() {
                             let rest = &bytes[k..];
                             let mut end = 0;
-                            while end < rest.len() && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'#' {
+                            while end < rest.len()
+                                && rest[end] != b'\n'
+                                && rest[end] != b'\r'
+                                && rest[end] != b'#'
+                            {
                                 end += 1;
                             }
                             if let Ok(value_str) = std::str::from_utf8(&rest[..end]) {
@@ -2769,9 +2913,15 @@ pub mod patterns {
                 return true;
             }
         }
-        if stripped.len() == 10 && stripped.chars().enumerate().all(|(i, c)| {
-            if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() }
-        }) {
+        if stripped.len() == 10
+            && stripped.chars().enumerate().all(|(i, c)| {
+                if i == 4 || i == 7 {
+                    c == '-'
+                } else {
+                    c.is_ascii_digit()
+                }
+            })
+        {
             return true;
         }
         false
@@ -2783,50 +2933,77 @@ pub mod patterns {
 
         if let Some(v) = check_aws_key(line) {
             if !is_whitelisted(v) {
-                hits.push(Hit { kind: "aws-access-key", value: leaked_static(v) });
+                hits.push(Hit {
+                    kind: "aws-access-key",
+                    value: leaked_static(v),
+                });
             }
         }
 
         if let Some(v) = check_github_token(line) {
             if !is_whitelisted(v) {
-                hits.push(Hit { kind: "github-token", value: leaked_static(v) });
+                hits.push(Hit {
+                    kind: "github-token",
+                    value: leaked_static(v),
+                });
             }
         }
 
         if let Some(v) = check_private_key(line) {
-            hits.push(Hit { kind: "private-key", value: leaked_static(v) });
+            hits.push(Hit {
+                kind: "private-key",
+                value: leaked_static(v),
+            });
         }
 
         if let Some(v) = check_jwt(line) {
-            hits.push(Hit { kind: "jwt", value: leaked_static(v) });
+            hits.push(Hit {
+                kind: "jwt",
+                value: leaked_static(v),
+            });
         }
 
         if let Some(v) = check_slack_token(line) {
             if !is_whitelisted(v) {
-                hits.push(Hit { kind: "slack-token", value: leaked_static(v) });
+                hits.push(Hit {
+                    kind: "slack-token",
+                    value: leaked_static(v),
+                });
             }
         }
 
         if let Some(v) = check_api_key(line) {
             if !is_whitelisted(v) {
-                hits.push(Hit { kind: "api-key", value: leaked_static(v) });
+                hits.push(Hit {
+                    kind: "api-key",
+                    value: leaked_static(v),
+                });
             }
         }
 
         if let Some(v) = check_google_key(line) {
             if !is_whitelisted(v) {
-                hits.push(Hit { kind: "google-key", value: leaked_static(v) });
+                hits.push(Hit {
+                    kind: "google-key",
+                    value: leaked_static(v),
+                });
             }
         }
 
         if let Some(v) = check_auth_header(line) {
-            hits.push(Hit { kind: "auth-header", value: leaked_static(v) });
+            hits.push(Hit {
+                kind: "auth-header",
+                value: leaked_static(v),
+            });
         }
 
         if hits.is_empty() {
             if let Some((_kw, value)) = check_key_value(line) {
                 if !is_whitelisted(value) && crate::entropy::is_high_entropy(value) {
-                    hits.push(Hit { kind: "high-entropy-key", value: leaked_static(value) });
+                    hits.push(Hit {
+                        kind: "high-entropy-key",
+                        value: leaked_static(value),
+                    });
                 }
             }
         }
@@ -2889,7 +3066,11 @@ pub mod leakignore {
                     negated: false,
                     anchored: false,
                     dir_only: false,
-                    segments: extra.split('/').filter(|s| !s.is_empty()).map(String::from).collect(),
+                    segments: extra
+                        .split('/')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect(),
                 };
                 patterns.push(entry);
             }
@@ -2918,11 +3099,20 @@ pub mod leakignore {
         if dir_only && rest.len() > 1 {
             rest = &rest[..rest.len() - 1];
         }
-        let segments: Vec<String> = rest.split('/').filter(|s| !s.is_empty()).map(String::from).collect();
+        let segments: Vec<String> = rest
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
         if segments.is_empty() {
             return None;
         }
-        Some(IgnorePattern { negated, anchored, dir_only, segments })
+        Some(IgnorePattern {
+            negated,
+            anchored,
+            dir_only,
+            segments,
+        })
     }
 
     fn glob_match(pattern: &str, text: &str) -> bool {
@@ -2965,7 +3155,12 @@ pub mod leakignore {
         pi == p.len()
     }
 
-    fn segments_match(pattern_segs: &[String], path_segs: &[&str], anchored: bool, dir_only: bool) -> bool {
+    fn segments_match(
+        pattern_segs: &[String],
+        path_segs: &[&str],
+        anchored: bool,
+        dir_only: bool,
+    ) -> bool {
         if pattern_segs.is_empty() || path_segs.is_empty() {
             return false;
         }
@@ -2988,13 +3183,19 @@ pub mod leakignore {
                 if pattern_segs.len() > path_segs.len() {
                     return false;
                 }
-                return pattern_segs.iter().enumerate().all(|(pi, p)| glob_match(p, path_segs[pi]));
+                return pattern_segs
+                    .iter()
+                    .enumerate()
+                    .all(|(pi, p)| glob_match(p, path_segs[pi]));
             }
             if pattern_segs.len() > path_segs.len() {
                 return false;
             }
             let start = path_segs.len() - pattern_segs.len();
-            pattern_segs.iter().zip(path_segs[start..].iter()).all(|(p, t)| glob_match(p, t))
+            pattern_segs
+                .iter()
+                .zip(path_segs[start..].iter())
+                .all(|(p, t)| glob_match(p, t))
         }
     }
 
@@ -3093,12 +3294,15 @@ pub mod secrets {
 
         if is_binary && !is_text_extension(path) {
             let hits = crate::patterns::detect(path);
-            return hits.into_iter().map(|h| Finding {
-                kind: h.kind.to_string(),
-                file: file.to_string(),
-                line: 0,
-                redacted: crate::output::redact(h.value),
-            }).collect();
+            return hits
+                .into_iter()
+                .map(|h| Finding {
+                    kind: h.kind.to_string(),
+                    file: file.to_string(),
+                    line: 0,
+                    redacted: crate::output::redact(h.value),
+                })
+                .collect();
         }
 
         let text = match std::str::from_utf8(data) {
@@ -3119,7 +3323,9 @@ pub mod secrets {
             }
         }
 
-        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.dedup_by(|a, b| {
+            a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted
+        });
         findings.sort_by_key(|f| f.line);
         findings
     }
@@ -3127,11 +3333,44 @@ pub mod secrets {
     fn is_text_extension(path: &str) -> bool {
         let lower = path.to_ascii_lowercase();
         let text_exts = [
-            ".txt", ".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",
-            ".toml", ".md", ".sh", ".go", ".c", ".h", ".java", ".rb", ".php", ".xml",
-            ".html", ".css", ".sql", ".csv", ".cfg", ".conf", ".ini", ".env",
-            ".gitignore", ".leakignore", ".lock", ".log", ".toml", ".nix",
-            ".mk", ".makefile", ".dockerfile", ".docker",
+            ".txt",
+            ".rs",
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".md",
+            ".sh",
+            ".go",
+            ".c",
+            ".h",
+            ".java",
+            ".rb",
+            ".php",
+            ".xml",
+            ".html",
+            ".css",
+            ".sql",
+            ".csv",
+            ".cfg",
+            ".conf",
+            ".ini",
+            ".env",
+            ".gitignore",
+            ".leakignore",
+            ".lock",
+            ".log",
+            ".toml",
+            ".nix",
+            ".mk",
+            ".makefile",
+            ".dockerfile",
+            ".docker",
         ];
         text_exts.iter().any(|ext| lower.ends_with(ext))
     }
@@ -3170,10 +3409,21 @@ pub mod secrets {
         Ok(None)
     }
 
-    fn scan_worktree(repo: &crate::repo::Repo, ignore: &crate::leakignore::LeakIgnore) -> Result<Vec<Finding>, ScannerError> {
+    fn scan_worktree(
+        repo: &crate::repo::Repo,
+        ignore: &crate::leakignore::LeakIgnore,
+    ) -> Result<Vec<Finding>, ScannerError> {
         let mut findings = Vec::new();
-        walk_dir(repo, &repo.work_dir.clone(), &repo.work_dir, ignore, &mut findings)?;
-        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        walk_dir(
+            repo,
+            &repo.work_dir.clone(),
+            &repo.work_dir,
+            ignore,
+            &mut findings,
+        )?;
+        findings.dedup_by(|a, b| {
+            a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted
+        });
         findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
         Ok(findings)
     }
@@ -3225,7 +3475,9 @@ pub mod secrets {
                 Err(_) => continue,
             }
         }
-        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.dedup_by(|a, b| {
+            a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted
+        });
         findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
         Ok(findings)
     }
@@ -3233,7 +3485,8 @@ pub mod secrets {
     fn scan_since(repo: &crate::repo::Repo, refish: &str) -> Result<Vec<Finding>, ScannerError> {
         let from_oid = crate::repo::resolve_refish(repo, refish).map_err(ScannerError::Repo)?;
         let to_oid = crate::repo::resolve_refish(repo, "HEAD").map_err(ScannerError::Repo)?;
-        let changed = crate::graph::changed_files_between(repo, &from_oid, &to_oid).map_err(ScannerError::Obj)?;
+        let changed = crate::graph::changed_files_between(repo, &from_oid, &to_oid)
+            .map_err(ScannerError::Obj)?;
         let to_commit = crate::objects::load_commit(repo, &to_oid).map_err(ScannerError::Obj)?;
         scan_commit_files(repo, &to_commit.tree, &changed)
     }
@@ -3253,28 +3506,25 @@ pub mod secrets {
         let mut findings = Vec::new();
         for file_path in files {
             match resolve_file_in_tree(repo, tree_oid, file_path) {
-                Ok(Some(blob_oid)) => {
-                    match crate::objects::load_blob(repo, &blob_oid) {
-                        Ok(data) => {
-                            let mut f = scan_text(file_path, file_path, &data);
-                            findings.append(&mut f);
-                        }
-                        Err(_) => continue,
+                Ok(Some(blob_oid)) => match crate::objects::load_blob(repo, &blob_oid) {
+                    Ok(data) => {
+                        let mut f = scan_text(file_path, file_path, &data);
+                        findings.append(&mut f);
                     }
-                }
+                    Err(_) => continue,
+                },
                 _ => continue,
             }
         }
-        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.dedup_by(|a, b| {
+            a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted
+        });
         findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
         Ok(findings)
     }
 
     /// Runs the secret scanner against the given target.
-    pub fn run(
-        repo: &crate::repo::Repo,
-        target: ScanTarget,
-    ) -> Result<Vec<Finding>, ScannerError> {
+    pub fn run(repo: &crate::repo::Repo, target: ScanTarget) -> Result<Vec<Finding>, ScannerError> {
         let ignore = crate::leakignore::load(repo).map_err(ScannerError::Leak)?;
         match target {
             ScanTarget::Worktree => scan_worktree(repo, &ignore),
@@ -3452,7 +3702,10 @@ fn main() {
                 }
             }
 
-            print!("{}", crate::branch::format_clean(&infos, &deleted, &kept, apply));
+            print!(
+                "{}",
+                crate::branch::format_clean(&infos, &deleted, &kept, apply)
+            );
             std::process::exit(0);
         }
         crate::cli::Command::SecretsScan(opts) => {
@@ -3499,9 +3752,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use crate::testdata;
     use crate::testutil;
+    use std::fs;
 
     #[test]
     fn inflate_zlib_hello() {
@@ -3608,7 +3861,10 @@ mod tests {
     fn tag_deref() {
         let dir = testutil::unique_tempdir("tag_deref");
         let target_oid = crate::objects::Oid([2u8; 20]);
-        let content = format!("object {}\ntype commit\ntag v1.0\n\nRelease\n", target_oid.to_hex());
+        let content = format!(
+            "object {}\ntype commit\ntag v1.0\n\nRelease\n",
+            target_oid.to_hex()
+        );
         let oid = testutil::write_loose_object(&dir, "tag", content.as_bytes());
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -3639,7 +3895,11 @@ mod tests {
         let dir = testutil::unique_tempdir("sha256_repo");
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        fs::write(git_dir.join("config"), "[extensions]\n    objectFormat = sha256\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[extensions]\n    objectFormat = sha256\n",
+        )
+        .unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir,
@@ -3669,7 +3929,11 @@ mod tests {
         fs::create_dir_all(&actual_git).unwrap();
         let wt = dir.join("wt");
         fs::create_dir_all(&wt).unwrap();
-        fs::write(wt.join(".git"), format!("gitdir: {}\n", actual_git.display())).unwrap();
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", actual_git.display()),
+        )
+        .unwrap();
         let repo = crate::repo::find_repo_from(&wt).unwrap();
         assert_eq!(repo.git_dir, actual_git);
         let _ = fs::remove_dir_all(&dir);
@@ -3782,7 +4046,9 @@ mod tests {
             git_dir,
         };
         let cfg = crate::repo::read_config(&repo).unwrap();
-        let oid = crate::repo::upstream_oid(&repo, &cfg, "feat").unwrap().unwrap();
+        let oid = crate::repo::upstream_oid(&repo, &cfg, "feat")
+            .unwrap()
+            .unwrap();
         assert_eq!(oid, target_oid);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -3793,10 +4059,17 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads_dir = git_dir.join("refs/heads");
         fs::create_dir_all(&heads_dir).unwrap();
-        fs::write(heads_dir.join("feat"), format!("{}\n", crate::objects::Oid([1; 20]).to_hex())).unwrap();
+        fs::write(
+            heads_dir.join("feat"),
+            format!("{}\n", crate::objects::Oid([1; 20]).to_hex()),
+        )
+        .unwrap();
         fs::write(
             git_dir.join("packed-refs"),
-            format!("{} refs/heads/feat\n^somepeeled\n", crate::objects::Oid([1; 20]).to_hex()),
+            format!(
+                "{} refs/heads/feat\n^somepeeled\n",
+                crate::objects::Oid([1; 20]).to_hex()
+            ),
         )
         .unwrap();
         let repo = crate::repo::Repo {
@@ -3821,7 +4094,10 @@ mod tests {
             work_dir: dir.clone(),
             git_dir,
         };
-        assert_eq!(crate::repo::head(&repo).unwrap(), crate::repo::HeadRef::Unborn);
+        assert_eq!(
+            crate::repo::head(&repo).unwrap(),
+            crate::repo::HeadRef::Unborn
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -3836,7 +4112,10 @@ mod tests {
             work_dir: dir.clone(),
             git_dir,
         };
-        assert_eq!(crate::repo::head(&repo).unwrap(), crate::repo::HeadRef::Detached(oid));
+        assert_eq!(
+            crate::repo::head(&repo).unwrap(),
+            crate::repo::HeadRef::Detached(oid)
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -3936,7 +4215,10 @@ mod tests {
         let dir = testutil::unique_tempdir("reach_true");
         let commit1_data = b"tree 0000000000000000000000000000000000000000\n\nC1\n";
         let c1_oid = testutil::write_loose_object(&dir, "commit", commit1_data);
-        let commit2_data = format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n", c1_oid.to_hex());
+        let commit2_data = format!(
+            "tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n",
+            c1_oid.to_hex()
+        );
         let c2_oid = testutil::write_loose_object(&dir, "commit", commit2_data.as_bytes());
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -3949,8 +4231,16 @@ mod tests {
     #[test]
     fn reachable_false() {
         let dir = testutil::unique_tempdir("reach_false");
-        let c1_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC2\n");
+        let c1_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC2\n",
+        );
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
@@ -3962,49 +4252,83 @@ mod tests {
     #[test]
     fn ahead_one() {
         let dir = testutil::unique_tempdir("ahead_one");
-        let c1_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2_data = format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n", c1_oid.to_hex());
+        let c1_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2_data = format!(
+            "tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n",
+            c1_oid.to_hex()
+        );
         let c2_oid = testutil::write_loose_object(&dir, "commit", c2_data.as_bytes());
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
         };
-        assert_eq!(crate::graph::commits_only_in(&repo, &c2_oid, &c1_oid).unwrap(), 1);
+        assert_eq!(
+            crate::graph::commits_only_in(&repo, &c2_oid, &c1_oid).unwrap(),
+            1
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn behind_two() {
         let dir = testutil::unique_tempdir("behind_two");
-        let c1_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2_data = format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n", c1_oid.to_hex());
+        let c1_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2_data = format!(
+            "tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n",
+            c1_oid.to_hex()
+        );
         let c2_oid = testutil::write_loose_object(&dir, "commit", c2_data.as_bytes());
-        let c3_data = format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC3\n", c2_oid.to_hex());
+        let c3_data = format!(
+            "tree 0000000000000000000000000000000000000000\nparent {}\n\nC3\n",
+            c2_oid.to_hex()
+        );
         let c3_oid = testutil::write_loose_object(&dir, "commit", c3_data.as_bytes());
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
         };
-        assert_eq!(crate::graph::commits_only_in(&repo, &c3_oid, &c1_oid).unwrap(), 2);
+        assert_eq!(
+            crate::graph::commits_only_in(&repo, &c3_oid, &c1_oid).unwrap(),
+            2
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn same_commit_zero() {
         let dir = testutil::unique_tempdir("same_zero");
-        let c1_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
         };
-        assert_eq!(crate::graph::commits_only_in(&repo, &c1_oid, &c1_oid).unwrap(), 0);
+        assert_eq!(
+            crate::graph::commits_only_in(&repo, &c1_oid, &c1_oid).unwrap(),
+            0
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn cycle_safe() {
         let dir = testutil::unique_tempdir("cycle_safe");
-        let c1_oid = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
@@ -4065,28 +4389,58 @@ mod tests {
             work_dir: dir.clone(),
             git_dir: dir.join(".git"),
         };
-        let changed = crate::graph::changed_files_between(&repo, &commit1_oid, &commit2_oid).unwrap();
+        let changed =
+            crate::graph::changed_files_between(&repo, &commit1_oid, &commit2_oid).unwrap();
         assert_eq!(changed, vec!["a.txt", "b.txt"]);
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn cli_branch_list() {
-        let args = vec!["git-jan".into(), "branch".into(), "list".into(), "--base".into(), "develop".into()];
+        let args = vec![
+            "git-jan".into(),
+            "branch".into(),
+            "list".into(),
+            "--base".into(),
+            "develop".into(),
+        ];
         let cmd = crate::cli::parse(args.into_iter()).unwrap();
-        assert_eq!(cmd, crate::cli::Command::BranchList { base: Some("develop".into()) });
+        assert_eq!(
+            cmd,
+            crate::cli::Command::BranchList {
+                base: Some("develop".into())
+            }
+        );
     }
 
     #[test]
     fn cli_clean_apply() {
-        let args = vec!["git-jan".into(), "branch".into(), "clean".into(), "--apply".into()];
+        let args = vec![
+            "git-jan".into(),
+            "branch".into(),
+            "clean".into(),
+            "--apply".into(),
+        ];
         let cmd = crate::cli::parse(args.into_iter()).unwrap();
-        assert_eq!(cmd, crate::cli::Command::BranchClean { base: None, apply: true });
+        assert_eq!(
+            cmd,
+            crate::cli::Command::BranchClean {
+                base: None,
+                apply: true
+            }
+        );
     }
 
     #[test]
     fn cli_scan_all_flags() {
-        let args = vec!["git-jan".into(), "secrets".into(), "scan".into(), "--staged".into(), "--format".into(), "json".into()];
+        let args = vec![
+            "git-jan".into(),
+            "secrets".into(),
+            "scan".into(),
+            "--staged".into(),
+            "--format".into(),
+            "json".into(),
+        ];
         let cmd = crate::cli::parse(args.into_iter()).unwrap();
         assert_eq!(
             cmd,
@@ -4101,7 +4455,14 @@ mod tests {
 
     #[test]
     fn cli_scan_conflict_error() {
-        let args = vec!["git-jan".into(), "secrets".into(), "scan".into(), "--staged".into(), "--since".into(), "HEAD~1".into()];
+        let args = vec![
+            "git-jan".into(),
+            "secrets".into(),
+            "scan".into(),
+            "--staged".into(),
+            "--since".into(),
+            "HEAD~1".into(),
+        ];
         assert!(crate::cli::parse(args.into_iter()).is_err());
     }
 
@@ -4114,7 +4475,10 @@ mod tests {
     #[test]
     fn json_escape_basic() {
         let raw = "hello \"world\"\n\\test";
-        assert_eq!(crate::output::json_escape(raw), "hello \\\"world\\\"\\n\\\\test");
+        assert_eq!(
+            crate::output::json_escape(raw),
+            "hello \\\"world\\\"\\n\\\\test"
+        );
     }
 
     #[test]
@@ -4141,14 +4505,30 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2 = testutil::write_loose_object(&dir, "commit", format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n", c1.to_hex()).as_bytes());
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!(
+                "tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n",
+                c1.to_hex()
+            )
+            .as_bytes(),
+        );
         fs::write(heads.join("main"), format!("{}\n", c2.to_hex())).unwrap();
         fs::write(heads.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
         let rem_dir = git_dir.join("refs/remotes/origin");
         fs::create_dir_all(&rem_dir).unwrap();
         fs::write(rem_dir.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
-        fs::write(git_dir.join("config"), "[branch \"feat\"]\n    remote = origin\n    merge = refs/heads/feat\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[branch \"feat\"]\n    remote = origin\n    merge = refs/heads/feat\n",
+        )
+        .unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4169,8 +4549,16 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC2\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC2\n",
+        );
         fs::write(heads.join("main"), format!("{}\n", c1.to_hex())).unwrap();
         fs::write(heads.join("feat"), format!("{}\n", c2.to_hex())).unwrap();
         let repo = crate::repo::Repo {
@@ -4190,7 +4578,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("main"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4209,7 +4601,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat\n").unwrap();
         let repo = crate::repo::Repo {
@@ -4229,13 +4625,29 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
-        let c2 = testutil::write_loose_object(&dir, "commit", format!("tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n", c1.to_hex()).as_bytes());
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
+        let c2 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!(
+                "tree 0000000000000000000000000000000000000000\nparent {}\n\nC2\n",
+                c1.to_hex()
+            )
+            .as_bytes(),
+        );
         fs::write(heads.join("feat"), format!("{}\n", c2.to_hex())).unwrap();
         let rem_dir = git_dir.join("refs/remotes/origin");
         fs::create_dir_all(&rem_dir).unwrap();
         fs::write(rem_dir.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
-        fs::write(git_dir.join("config"), "[branch \"feat\"]\n    remote = origin\n    merge = refs/heads/feat\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[branch \"feat\"]\n    remote = origin\n    merge = refs/heads/feat\n",
+        )
+        .unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
             git_dir,
@@ -4253,7 +4665,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("localonly"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4272,7 +4688,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4292,7 +4712,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4310,7 +4734,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("feat"), format!("{}\n", c1.to_hex())).unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/feat\n").unwrap();
         let repo = crate::repo::Repo {
@@ -4328,7 +4756,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("main"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4359,7 +4791,11 @@ mod tests {
         let dir = testutil::unique_tempdir("det_ok");
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(git_dir.join("HEAD"), format!("{}\n", c1.to_hex())).unwrap();
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4447,7 +4883,11 @@ mod tests {
         let git_dir = dir.join(".git");
         let heads = git_dir.join("refs/heads");
         fs::create_dir_all(&heads).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::write(heads.join("main"), format!("{}\n", c1.to_hex())).unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         let repo = crate::repo::Repo {
@@ -4455,7 +4895,11 @@ mod tests {
             git_dir,
         };
         let report = crate::doctor::run(&repo);
-        assert!(report.errs.is_empty(), "expected no errors, got: {:?}", report.errs);
+        assert!(
+            report.errs.is_empty(),
+            "expected no errors, got: {:?}",
+            report.errs
+        );
         assert!(!report.ok.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -4477,9 +4921,8 @@ mod tests {
         let dir = testutil::unique_tempdir("pack_commit");
         let blob_content = b"blob content for pack test";
         let blob_oid = testutil::write_loose_object(&dir, "blob", blob_content);
-        let commit_content = format!(
-            "tree 0000000000000000000000000000000000000000\n\npack commit\n"
-        );
+        let commit_content =
+            format!("tree 0000000000000000000000000000000000000000\n\npack commit\n");
         let commit_oid = testutil::write_loose_object(&dir, "commit", commit_content.as_bytes());
         let repo = crate::repo::Repo {
             work_dir: dir.clone(),
@@ -4619,7 +5062,10 @@ mod tests {
         let dir = testutil::unique_tempdir("li_empty");
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(!ignore.is_ignored("foo.txt"));
         let _ = fs::remove_dir_all(&dir);
@@ -4631,7 +5077,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "*.log\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(ignore.is_ignored("foo.log"));
         assert!(!ignore.is_ignored("foo.txt"));
@@ -4644,7 +5093,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "build/**\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(ignore.is_ignored("build/out/foo"));
         assert!(!ignore.is_ignored("src/main.rs"));
@@ -4657,7 +5109,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "*.log\n!important.log\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(!ignore.is_ignored("important.log"));
         assert!(ignore.is_ignored("other.log"));
@@ -4670,7 +5125,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "# this is a comment\n\n*.tmp\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(ignore.is_ignored("foo.tmp"));
         let _ = fs::remove_dir_all(&dir);
@@ -4682,7 +5140,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "/vendor/\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(ignore.is_ignored("vendor/lib"));
         assert!(!ignore.is_ignored("src/vendor/lib"));
@@ -4695,7 +5156,10 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "tmp/\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let ignore = crate::leakignore::load(&repo).unwrap();
         assert!(ignore.is_ignored("tmp/foo"));
         let _ = fs::remove_dir_all(&dir);
@@ -4744,8 +5208,15 @@ mod tests {
         let dir = testutil::unique_tempdir("wt_secret");
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        fs::write(dir.join("config.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        fs::write(
+            dir.join("config.txt"),
+            "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
         assert!(!findings.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -4757,8 +5228,15 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(dir.join(".leakignore"), "*.log\n").unwrap();
-        fs::write(dir.join("secret.log"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        fs::write(
+            dir.join("secret.log"),
+            "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
         assert!(findings.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -4769,8 +5247,15 @@ mod tests {
         let dir = testutil::unique_tempdir("wt_gitdir");
         let git_dir = dir.join(".git");
         fs::create_dir_all(git_dir.join("objects")).unwrap();
-        fs::write(git_dir.join("secret.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir: git_dir.clone() };
+        fs::write(
+            git_dir.join("secret.txt"),
+            "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir: git_dir.clone(),
+        };
         let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
         assert!(findings.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -4789,7 +5274,10 @@ mod tests {
     fn dedup_findings() {
         let data = b"const key = \"AKIAIOSFODNN7EXAMPLE\" and \"AKIAIOSFODNN7EXAMPLE\"\n";
         let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
-        let aws_count = findings.iter().filter(|f| f.kind == "aws-access-key").count();
+        let aws_count = findings
+            .iter()
+            .filter(|f| f.kind == "aws-access-key")
+            .count();
         assert!(aws_count >= 1);
     }
 
@@ -4863,7 +5351,11 @@ mod tests {
         );
         fs::write(git_dir.join("HEAD"), format!("ref: refs/heads/main\n")).unwrap();
         fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
-        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
+        fs::write(
+            git_dir.join("refs/heads/main"),
+            format!("{}\n", commit_oid.to_hex()),
+        )
+        .unwrap();
         let mut index_data = Vec::new();
         index_data.extend_from_slice(b"DIRC");
         index_data.extend_from_slice(&2u32.to_be_bytes());
@@ -4874,7 +5366,10 @@ mod tests {
         index_data.extend_from_slice(b"secret.txt\0");
         index_data.extend_from_slice(&[0u8; 7]);
         fs::write(git_dir.join("index"), &index_data).unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Staged).unwrap();
         assert!(!findings.is_empty());
         assert_eq!(findings[0].kind, "aws-access-key");
@@ -4899,7 +5394,11 @@ mod tests {
             format!("tree {}\n\ninit\n", tree_oid.to_hex()).as_bytes(),
         );
         fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
-        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
+        fs::write(
+            git_dir.join("refs/heads/main"),
+            format!("{}\n", commit_oid.to_hex()),
+        )
+        .unwrap();
         let mut index_data = Vec::new();
         index_data.extend_from_slice(b"DIRC");
         index_data.extend_from_slice(&2u32.to_be_bytes());
@@ -4910,8 +5409,15 @@ mod tests {
         index_data.extend_from_slice(b"secret.txt\0");
         index_data.extend_from_slice(&[0u8; 7]);
         fs::write(git_dir.join("index"), &index_data).unwrap();
-        fs::write(dir.join("secret.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        fs::write(
+            dir.join("secret.txt"),
+            "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Staged).unwrap();
         assert!(findings.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -4928,19 +5434,39 @@ mod tests {
         t1.extend_from_slice(b"100644 a.txt\0");
         t1.extend_from_slice(&clean_blob.0);
         let tree1 = testutil::write_loose_object(&dir, "tree", &t1);
-        let c1 = testutil::write_loose_object(&dir, "commit", format!("tree {}\n\nC1\n", tree1.to_hex()).as_bytes());
-        let secret_blob = testutil::write_loose_object(&dir, "blob", b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!("tree {}\n\nC1\n", tree1.to_hex()).as_bytes(),
+        );
+        let secret_blob = testutil::write_loose_object(
+            &dir,
+            "blob",
+            b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        );
         let mut t2 = Vec::new();
         t2.extend_from_slice(b"100644 a.txt\0");
         t2.extend_from_slice(&clean_blob.0);
         t2.extend_from_slice(b"100644 b.txt\0");
         t2.extend_from_slice(&secret_blob.0);
         let tree2 = testutil::write_loose_object(&dir, "tree", &t2);
-        let c2 = testutil::write_loose_object(&dir, "commit", format!("tree {}\nparent {}\n\nC2\n", tree2.to_hex(), c1.to_hex()).as_bytes());
+        let c2 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!("tree {}\nparent {}\n\nC2\n", tree2.to_hex(), c1.to_hex()).as_bytes(),
+        );
         fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
-        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", c2.to_hex())).unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
-        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Since(c1.to_hex())).unwrap();
+        fs::write(
+            git_dir.join("refs/heads/main"),
+            format!("{}\n", c2.to_hex()),
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
+        let findings =
+            crate::secrets::run(&repo, crate::secrets::ScanTarget::Since(c1.to_hex())).unwrap();
         assert!(!findings.is_empty());
         assert_eq!(findings[0].kind, "aws-access-key");
         let _ = fs::remove_dir_all(&dir);
@@ -4952,16 +5478,35 @@ mod tests {
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        let secret_blob = testutil::write_loose_object(&dir, "blob", b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n");
+        let secret_blob = testutil::write_loose_object(
+            &dir,
+            "blob",
+            b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n",
+        );
         let mut tree = Vec::new();
         tree.extend_from_slice(b"100644 secret.txt\0");
         tree.extend_from_slice(&secret_blob.0);
         let tree_oid = testutil::write_loose_object(&dir, "tree", &tree);
-        let commit_oid = testutil::write_loose_object(&dir, "commit", format!("tree {}\n\nC1\n", tree_oid.to_hex()).as_bytes());
+        let commit_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!("tree {}\n\nC1\n", tree_oid.to_hex()).as_bytes(),
+        );
         fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
-        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
-        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Commit(commit_oid.to_hex())).unwrap();
+        fs::write(
+            git_dir.join("refs/heads/main"),
+            format!("{}\n", commit_oid.to_hex()),
+        )
+        .unwrap();
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
+        let findings = crate::secrets::run(
+            &repo,
+            crate::secrets::ScanTarget::Commit(commit_oid.to_hex()),
+        )
+        .unwrap();
         assert!(!findings.is_empty());
         assert_eq!(findings[0].kind, "aws-access-key");
         let _ = fs::remove_dir_all(&dir);
@@ -4972,11 +5517,22 @@ mod tests {
         let dir = testutil::unique_tempdir("ht_0");
         let git_dir = dir.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        let c1 = testutil::write_loose_object(
+            &dir,
+            "commit",
+            b"tree 0000000000000000000000000000000000000000\n\nC1\n",
+        );
         fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
-        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", c1.to_hex())).unwrap();
+        fs::write(
+            git_dir.join("refs/heads/main"),
+            format!("{}\n", c1.to_hex()),
+        )
+        .unwrap();
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let repo = crate::repo::Repo {
+            work_dir: dir.clone(),
+            git_dir,
+        };
         let oid = crate::repo::resolve_refish(&repo, "HEAD~0").unwrap();
         assert_eq!(oid, c1);
         let _ = fs::remove_dir_all(&dir);
