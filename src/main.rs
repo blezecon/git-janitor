@@ -2546,29 +2546,18 @@ pub mod patterns {
         pub value: &'static str,
     }
 
-    fn is_upper_alnum(c: char) -> bool {
-        c.is_ascii_uppercase() || c.is_ascii_digit()
-    }
-
-    fn is_base64url(c: char) -> bool {
-        c.is_ascii_alphanumeric() || c == '-' || c == '_'
-    }
-
-    fn is_valid_token_char(c: char) -> bool {
-        c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/' || c == '+' || c == '=' || c == '~'
+    fn is_valid_token_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'/' || b == b'+' || b == b'=' || b == b'~'
     }
 
     fn check_aws_key(line: &str) -> Option<&str> {
         let bytes = line.as_bytes();
         for i in 0..bytes.len() {
-            if bytes[i] == b'A' && i + 20 <= bytes.len() {
-                if bytes[i + 1] == b'K'
-                    && bytes[i + 2] == b'I'
-                    && bytes[i + 3] == b'A'
-                {
-                    let rest = &line[i + 4..i + 20];
-                    if rest.len() == 16 && rest.chars().all(is_upper_alnum) {
-                        return Some(&line[i..i + 20]);
+            if i + 20 <= bytes.len() && &bytes[i..i + 4] == b"AKIA" {
+                let rest = &bytes[i + 4..i + 20];
+                if rest.iter().all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 20]) {
+                        return Some(s);
                     }
                 }
             }
@@ -2577,14 +2566,16 @@ pub mod patterns {
     }
 
     fn check_github_token(line: &str) -> Option<&str> {
-        let prefixes = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+        let prefixes: [&[u8]; 5] = [b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_"];
+        let bytes = line.as_bytes();
         for prefix in &prefixes {
-            if let Some(pos) = line.find(prefix) {
-                let start = pos + prefix.len();
-                if start + 36 <= line.len() {
-                    let token = &line[start..start + 36];
-                    if token.chars().all(|c| c.is_ascii_alphanumeric()) {
-                        return Some(&line[pos..start + 36]);
+            for i in 0..bytes.len() {
+                if i + prefix.len() + 36 <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let token_bytes = &bytes[i + prefix.len()..i + prefix.len() + 36];
+                    if token_bytes.iter().all(|&b| b.is_ascii_alphanumeric()) {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + 36]) {
+                            return Some(s);
+                        }
                     }
                 }
             }
@@ -2612,13 +2603,11 @@ pub mod patterns {
         if segments.next().is_some() {
             return None;
         }
-        if !s1.starts_with("eyJ") {
+        if !s1.starts_with("eyJ") || s1.is_empty() || s2.is_empty() || s3.is_empty() {
             return None;
         }
-        if s1.is_empty() || s2.is_empty() || s3.is_empty() {
-            return None;
-        }
-        if !(s1.chars().all(is_base64url) && s2.chars().all(is_base64url) && s3.chars().all(is_base64url)) {
+        let is_b64url = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        if !(s1.chars().all(is_b64url) && s2.chars().all(is_b64url) && s3.chars().all(is_b64url)) {
             return None;
         }
         Some(trimmed)
@@ -2626,15 +2615,18 @@ pub mod patterns {
 
     fn check_slack_token(line: &str) -> Option<&str> {
         let bytes = line.as_bytes();
+        let prefixes: [&[u8]; 5] = [b"xoxb-", b"xoxp-", b"xoxa-", b"xoxr-", b"xoxs-"];
         for i in 0..bytes.len() {
-            if bytes[i] == b'x' && i + 5 <= bytes.len() {
-                let p = &line[i..];
-                for prefix in &["xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-"] {
-                    if p.starts_with(prefix) {
-                        let rest = &p[prefix.len()..];
-                        if rest.len() >= 12 && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-                            let total = prefix.len() + rest.len();
-                            return Some(&line[i..i + total]);
+            for prefix in &prefixes {
+                if i + prefix.len() <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let rest = &bytes[i + prefix.len()..];
+                    let mut end = 0;
+                    while end < rest.len() && (rest[end].is_ascii_alphanumeric() || rest[end] == b'-' || rest[end] == b'_') {
+                        end += 1;
+                    }
+                    if end >= 12 {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + end]) {
+                            return Some(s);
                         }
                     }
                 }
@@ -2644,23 +2636,20 @@ pub mod patterns {
     }
 
     fn check_api_key(line: &str) -> Option<&str> {
-        if let Some(pos) = line.find("sk_live_") {
-            let start = pos + 8;
-            if start + 16 <= line.len() {
-                let rest = &line[start..];
-                let end = rest.find(|c: char| !is_valid_token_char(c)).unwrap_or(rest.len());
-                if end >= 16 {
-                    return Some(&line[pos..start + end]);
-                }
-            }
-        }
-        if let Some(pos) = line.find("sk-") {
-            let start = pos + 3;
-            if start + 16 <= line.len() {
-                let rest = &line[start..];
-                let end = rest.find(|c: char| !is_valid_token_char(c)).unwrap_or(rest.len());
-                if end >= 16 {
-                    return Some(&line[pos..start + end]);
+        let bytes = line.as_bytes();
+        for prefix in &[b"sk_live_" as &[u8], b"sk-"] {
+            for i in 0..bytes.len() {
+                if i + prefix.len() <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let rest = &bytes[i + prefix.len()..];
+                    let mut end = 0;
+                    while end < rest.len() && is_valid_token_byte(rest[end]) {
+                        end += 1;
+                    }
+                    if end >= 16 {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + end]) {
+                            return Some(s);
+                        }
+                    }
                 }
             }
         }
@@ -2670,11 +2659,11 @@ pub mod patterns {
     fn check_google_key(line: &str) -> Option<&str> {
         let bytes = line.as_bytes();
         for i in 0..bytes.len() {
-            if bytes[i] == b'A' && i + 39 <= bytes.len() {
-                if line[i + 1..].starts_with("Iza") {
-                    let rest = &line[i + 4..i + 39];
-                    if rest.len() == 35 && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-                        return Some(&line[i..i + 39]);
+            if i + 39 <= bytes.len() && &bytes[i..i + 4] == b"AIza" {
+                let rest = &bytes[i + 4..i + 39];
+                if rest.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 39]) {
+                        return Some(s);
                     }
                 }
             }
@@ -2683,20 +2672,31 @@ pub mod patterns {
     }
 
     fn check_auth_header(line: &str) -> Option<&str> {
-        if let Some(pos) = line.find("Basic ") {
-            let start = pos + 6;
-            let rest = &line[start..];
-            let end = rest.find(|c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '"').unwrap_or(rest.len());
-            if end >= 4 && rest[..end].chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
-                return Some(&line[pos..start + end]);
+        let bytes = line.as_bytes();
+        for i in 0..bytes.len() {
+            if i + 6 <= bytes.len() && &bytes[i..i + 6] == b"Basic " {
+                let rest = &bytes[i + 6..];
+                let mut end = 0;
+                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                    end += 1;
+                }
+                if end >= 4 && rest[..end].iter().all(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=') {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 6 + end]) {
+                        return Some(s);
+                    }
+                }
             }
-        }
-        if let Some(pos) = line.find("Bearer ") {
-            let start = pos + 7;
-            let rest = &line[start..];
-            let end = rest.find(|c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '"').unwrap_or(rest.len());
-            if end >= 28 && rest[..end].chars().all(is_valid_token_char) {
-                return Some(&line[pos..start + end]);
+            if i + 7 <= bytes.len() && &bytes[i..i + 7] == b"Bearer " {
+                let rest = &bytes[i + 7..];
+                let mut end = 0;
+                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                    end += 1;
+                }
+                if end >= 28 && rest[..end].iter().all(|&b| is_valid_token_byte(b)) {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 7 + end]) {
+                        return Some(s);
+                    }
+                }
             }
         }
         None
@@ -2712,8 +2712,7 @@ pub mod patterns {
             let kw_bytes = kw.as_bytes();
             for i in 0..bytes.len() {
                 if i + kw_bytes.len() <= bytes.len() && &bytes[i..i + kw_bytes.len()] == kw_bytes {
-                    let after_kw = i + kw_bytes.len();
-                    let mut j = after_kw;
+                    let mut j = i + kw_bytes.len();
                     while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
                         j += 1;
                     }
@@ -2723,11 +2722,16 @@ pub mod patterns {
                             k += 1;
                         }
                         if k < bytes.len() {
-                            let rest = &line[k..];
-                            let end = rest.find(|c: char| c == '\n' || c == '\r' || c == '#').unwrap_or(rest.len());
-                            let value = rest[..end].trim_end();
-                            if !value.is_empty() {
-                                return Some((kw, value));
+                            let rest = &bytes[k..];
+                            let mut end = 0;
+                            while end < rest.len() && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'#' {
+                                end += 1;
+                            }
+                            if let Ok(value_str) = std::str::from_utf8(&rest[..end]) {
+                                let trimmed = value_str.trim_end();
+                                if !trimmed.is_empty() {
+                                    return Some((kw, trimmed));
+                                }
                             }
                         }
                         break;
