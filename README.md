@@ -1,9 +1,5 @@
 # git-janitor (`git-jan`)
 
-[![CI](https://github.com/blezecon/git-janitor/actions/workflows/ci.yml/badge.svg)](https://github.com/blezecon/git-janitor/actions/workflows/ci.yml)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20crates-brightgreen.svg)](deps-proof.txt)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
 **`git-janitor`** (aliased as **`git-jan`**) is a blazing-fast, zero-dependency Git housekeeping and secret-leak scanner written entirely in Rust.
 
 It parses `.git/` internals directly from disk with **zero external crates** (standard library only) and **never shells out** to the `git` binary. Built for the **Zero Dependency Hackathon**, it compiles into a self-contained, reproducible binary via a pinned **Nix** environment inside an isolated **Podman** container.
