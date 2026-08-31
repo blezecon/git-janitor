@@ -2501,12 +2501,42 @@ pub mod entropy {
     pub const ENTROPY_THRESHOLD_LOW: f64 = 3.8;
     pub const TOKEN_MIN_LEN: usize = 12;
 
-    pub fn shannon_bits(_data: &[u8]) -> f64 {
-        0.0
+    /// Computes Shannon entropy in bits per byte.
+    pub fn shannon_bits(data: &[u8]) -> f64 {
+        if data.is_empty() {
+            return 0.0;
+        }
+        let mut freq = [0usize; 256];
+        for &b in data {
+            freq[b as usize] += 1;
+        }
+        let len = data.len() as f64;
+        let mut h = 0.0f64;
+        for &count in &freq {
+            if count > 0 {
+                let p = count as f64 / len;
+                h -= p * p.log2();
+            }
+        }
+        h
     }
 
-    pub fn is_high_entropy(_token: &str) -> bool {
-        false
+    /// Checks if a token has high entropy suitable for secret detection.
+    pub fn is_high_entropy(token: &str) -> bool {
+        let trimmed = token.trim_matches(|c: char| {
+            c == '"' || c == '\'' || c == '.' || c == ',' || c == ';'
+                || c == ':' || c == '=' || c == '(' || c == ')'
+                || c == '[' || c == ']' || c == '{' || c == '}'
+        });
+        if trimmed.len() < TOKEN_MIN_LEN {
+            return false;
+        }
+        let valid = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-'
+            || c == '.' || c == '/' || c == '+' || c == '=' || c == '~';
+        if !trimmed.chars().all(valid) {
+            return false;
+        }
+        shannon_bits(trimmed.as_bytes()) >= ENTROPY_THRESHOLD_LOW
     }
 }
 
@@ -2516,15 +2546,312 @@ pub mod patterns {
         pub value: &'static str,
     }
 
-    pub fn detect(_line: &str) -> Vec<Hit> {
-        Vec::new()
+    fn is_valid_token_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'/' || b == b'+' || b == b'=' || b == b'~'
+    }
+
+    fn check_aws_key(line: &str) -> Option<&str> {
+        let bytes = line.as_bytes();
+        for i in 0..bytes.len() {
+            if i + 20 <= bytes.len() && &bytes[i..i + 4] == b"AKIA" {
+                let rest = &bytes[i + 4..i + 20];
+                if rest.iter().all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 20]) {
+                        return Some(s);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_github_token(line: &str) -> Option<&str> {
+        let prefixes: [&[u8]; 5] = [b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_"];
+        let bytes = line.as_bytes();
+        for prefix in &prefixes {
+            for i in 0..bytes.len() {
+                if i + prefix.len() + 36 <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let token_bytes = &bytes[i + prefix.len()..i + prefix.len() + 36];
+                    if token_bytes.iter().all(|&b| b.is_ascii_alphanumeric()) {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + 36]) {
+                            return Some(s);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_private_key(line: &str) -> Option<&str> {
+        let trimmed = line.trim();
+        if trimmed.starts_with("-----BEGIN") && trimmed.contains("PRIVATE KEY-----") {
+            return Some(trimmed);
+        }
+        None
+    }
+
+    fn check_jwt(line: &str) -> Option<&str> {
+        let trimmed = line.trim();
+        if trimmed.len() < 64 {
+            return None;
+        }
+        let mut segments = trimmed.split('.');
+        let s1 = segments.next()?;
+        let s2 = segments.next()?;
+        let s3 = segments.next()?;
+        if segments.next().is_some() {
+            return None;
+        }
+        if !s1.starts_with("eyJ") || s1.is_empty() || s2.is_empty() || s3.is_empty() {
+            return None;
+        }
+        let is_b64url = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        if !(s1.chars().all(is_b64url) && s2.chars().all(is_b64url) && s3.chars().all(is_b64url)) {
+            return None;
+        }
+        Some(trimmed)
+    }
+
+    fn check_slack_token(line: &str) -> Option<&str> {
+        let bytes = line.as_bytes();
+        let prefixes: [&[u8]; 5] = [b"xoxb-", b"xoxp-", b"xoxa-", b"xoxr-", b"xoxs-"];
+        for i in 0..bytes.len() {
+            for prefix in &prefixes {
+                if i + prefix.len() <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let rest = &bytes[i + prefix.len()..];
+                    let mut end = 0;
+                    while end < rest.len() && (rest[end].is_ascii_alphanumeric() || rest[end] == b'-' || rest[end] == b'_') {
+                        end += 1;
+                    }
+                    if end >= 12 {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + end]) {
+                            return Some(s);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_api_key(line: &str) -> Option<&str> {
+        let bytes = line.as_bytes();
+        for prefix in &[b"sk_live_" as &[u8], b"sk-"] {
+            for i in 0..bytes.len() {
+                if i + prefix.len() <= bytes.len() && bytes[i..].starts_with(prefix) {
+                    let rest = &bytes[i + prefix.len()..];
+                    let mut end = 0;
+                    while end < rest.len() && is_valid_token_byte(rest[end]) {
+                        end += 1;
+                    }
+                    if end >= 16 {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i..i + prefix.len() + end]) {
+                            return Some(s);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_google_key(line: &str) -> Option<&str> {
+        let bytes = line.as_bytes();
+        for i in 0..bytes.len() {
+            if i + 39 <= bytes.len() && &bytes[i..i + 4] == b"AIza" {
+                let rest = &bytes[i + 4..i + 39];
+                if rest.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 39]) {
+                        return Some(s);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_auth_header(line: &str) -> Option<&str> {
+        let bytes = line.as_bytes();
+        for i in 0..bytes.len() {
+            if i + 6 <= bytes.len() && &bytes[i..i + 6] == b"Basic " {
+                let rest = &bytes[i + 6..];
+                let mut end = 0;
+                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                    end += 1;
+                }
+                if end >= 4 && rest[..end].iter().all(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=') {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 6 + end]) {
+                        return Some(s);
+                    }
+                }
+            }
+            if i + 7 <= bytes.len() && &bytes[i..i + 7] == b"Bearer " {
+                let rest = &bytes[i + 7..];
+                let mut end = 0;
+                while end < rest.len() && rest[end] != b' ' && rest[end] != b'\t' && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'"' {
+                    end += 1;
+                }
+                if end >= 28 && rest[..end].iter().all(|&b| is_valid_token_byte(b)) {
+                    if let Ok(s) = std::str::from_utf8(&bytes[i..i + 7 + end]) {
+                        return Some(s);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_key_value(line: &str) -> Option<(&str, &str)> {
+        let keywords = [
+            "password", "passwd", "secret", "token", "api_key", "apikey",
+            "client_secret", "access_token", "private_key", "credential", "auth",
+        ];
+        let bytes = line.as_bytes();
+        for kw in &keywords {
+            let kw_bytes = kw.as_bytes();
+            for i in 0..bytes.len() {
+                if i + kw_bytes.len() <= bytes.len() && &bytes[i..i + kw_bytes.len()] == kw_bytes {
+                    let mut j = i + kw_bytes.len();
+                    while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                        j += 1;
+                    }
+                    if j < bytes.len() && (bytes[j] == b':' || bytes[j] == b'=') {
+                        let mut k = j + 1;
+                        while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\t') {
+                            k += 1;
+                        }
+                        if k < bytes.len() {
+                            let rest = &bytes[k..];
+                            let mut end = 0;
+                            while end < rest.len() && rest[end] != b'\n' && rest[end] != b'\r' && rest[end] != b'#' {
+                                end += 1;
+                            }
+                            if let Ok(value_str) = std::str::from_utf8(&rest[..end]) {
+                                let trimmed = value_str.trim_end();
+                                if !trimmed.is_empty() {
+                                    return Some((kw, trimmed));
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn is_whitelisted(value: &str) -> bool {
+        let lower = value.to_ascii_lowercase();
+        let stripped = value.trim();
+        let is_exact_or_placeholder = {
+            let clean = stripped.trim_matches(|c: char| c == '"' || c == '\'' || c == '.');
+            clean.eq_ignore_ascii_case("changeme")
+                || clean.eq_ignore_ascii_case("example")
+                || clean.eq_ignore_ascii_case("your-password")
+                || clean.eq_ignore_ascii_case("your-token")
+                || clean.eq_ignore_ascii_case("your-secret")
+                || clean.eq_ignore_ascii_case("placeholder")
+                || clean.eq_ignore_ascii_case("xxxx")
+                || clean.eq_ignore_ascii_case("demo")
+                || lower.contains("your-username")
+                || lower.starts_with("your-")
+        };
+        if is_exact_or_placeholder {
+            return true;
+        }
+        if lower.contains("changeme") || lower.contains("placeholder") {
+            return true;
+        }
+        if stripped.len() == 32 || stripped.len() == 40 {
+            if stripped.chars().all(|c| c.is_ascii_hexdigit()) {
+                return true;
+            }
+        }
+        if stripped.len() == 10 && stripped.chars().enumerate().all(|(i, c)| {
+            if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() }
+        }) {
+            return true;
+        }
+        false
+    }
+
+    /// Detects secret patterns in a single line.
+    pub fn detect(line: &str) -> Vec<Hit> {
+        let mut hits = Vec::new();
+
+        if let Some(v) = check_aws_key(line) {
+            if !is_whitelisted(v) {
+                hits.push(Hit { kind: "aws-access-key", value: leaked_static(v) });
+            }
+        }
+
+        if let Some(v) = check_github_token(line) {
+            if !is_whitelisted(v) {
+                hits.push(Hit { kind: "github-token", value: leaked_static(v) });
+            }
+        }
+
+        if let Some(v) = check_private_key(line) {
+            hits.push(Hit { kind: "private-key", value: leaked_static(v) });
+        }
+
+        if let Some(v) = check_jwt(line) {
+            hits.push(Hit { kind: "jwt", value: leaked_static(v) });
+        }
+
+        if let Some(v) = check_slack_token(line) {
+            if !is_whitelisted(v) {
+                hits.push(Hit { kind: "slack-token", value: leaked_static(v) });
+            }
+        }
+
+        if let Some(v) = check_api_key(line) {
+            if !is_whitelisted(v) {
+                hits.push(Hit { kind: "api-key", value: leaked_static(v) });
+            }
+        }
+
+        if let Some(v) = check_google_key(line) {
+            if !is_whitelisted(v) {
+                hits.push(Hit { kind: "google-key", value: leaked_static(v) });
+            }
+        }
+
+        if let Some(v) = check_auth_header(line) {
+            hits.push(Hit { kind: "auth-header", value: leaked_static(v) });
+        }
+
+        if hits.is_empty() {
+            if let Some((_kw, value)) = check_key_value(line) {
+                if !is_whitelisted(value) && crate::entropy::is_high_entropy(value) {
+                    hits.push(Hit { kind: "high-entropy-key", value: leaked_static(value) });
+                }
+            }
+        }
+
+        hits
+    }
+
+    fn leaked_static(s: &str) -> &'static str {
+        Box::leak(s.to_string().into_boxed_str())
     }
 }
 
 pub mod leakignore {
     use std::fmt;
 
-    pub struct LeakIgnore;
+    struct IgnorePattern {
+        negated: bool,
+        anchored: bool,
+        dir_only: bool,
+        segments: Vec<String>,
+    }
+
+    pub struct LeakIgnore {
+        patterns: Vec<IgnorePattern>,
+    }
 
     #[derive(Debug)]
     pub enum LeakError {
@@ -2541,19 +2868,180 @@ pub mod leakignore {
 
     impl std::error::Error for LeakError {}
 
-    pub fn load(_repo: &crate::repo::Repo) -> Result<LeakIgnore, LeakError> {
-        Ok(LeakIgnore)
+    /// Loads .leakignore from repo root (if present), merging config ignore paths.
+    pub fn load(repo: &crate::repo::Repo) -> Result<LeakIgnore, LeakError> {
+        let mut patterns = Vec::new();
+
+        let ignore_path = repo.work_dir.join(".leakignore");
+        if ignore_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&ignore_path) {
+                for line in content.lines() {
+                    if let Some(p) = parse_line(line) {
+                        patterns.push(p);
+                    }
+                }
+            }
+        }
+
+        if let Ok(cfg) = crate::repo::read_config(repo) {
+            for extra in &cfg.leak_ignore_paths {
+                let entry = IgnorePattern {
+                    negated: false,
+                    anchored: false,
+                    dir_only: false,
+                    segments: extra.split('/').filter(|s| !s.is_empty()).map(String::from).collect(),
+                };
+                patterns.push(entry);
+            }
+        }
+
+        Ok(LeakIgnore { patterns })
+    }
+
+    fn parse_line(raw: &str) -> Option<IgnorePattern> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+        let mut rest = trimmed;
+        let negated = if rest.starts_with('!') {
+            rest = &rest[1..];
+            true
+        } else {
+            false
+        };
+        let anchored = rest.starts_with('/');
+        if anchored {
+            rest = &rest[1..];
+        }
+        let dir_only = rest.ends_with('/');
+        if dir_only && rest.len() > 1 {
+            rest = &rest[..rest.len() - 1];
+        }
+        let segments: Vec<String> = rest.split('/').filter(|s| !s.is_empty()).map(String::from).collect();
+        if segments.is_empty() {
+            return None;
+        }
+        Some(IgnorePattern { negated, anchored, dir_only, segments })
+    }
+
+    fn glob_match(pattern: &str, text: &str) -> bool {
+        glob_match_inner(pattern.as_bytes(), text.as_bytes())
+    }
+
+    fn glob_match_inner(p: &[u8], t: &[u8]) -> bool {
+        let mut pi = 0;
+        let mut ti = 0;
+        let mut star_pi = usize::MAX;
+        let mut star_ti = 0;
+
+        while ti < t.len() {
+            if pi < p.len() && p[pi] == b'*' && (pi + 1 >= p.len() || p[pi + 1] != b'*') {
+                star_pi = pi;
+                star_ti = ti;
+                pi += 1;
+            } else if pi < p.len() && p[pi] == b'*' && pi + 1 < p.len() && p[pi + 1] == b'*' {
+                star_pi = pi;
+                star_ti = ti;
+                pi += 2;
+                while pi < p.len() && p[pi] == b'/' {
+                    pi += 1;
+                }
+            } else if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
+                pi += 1;
+                ti += 1;
+            } else if star_pi != usize::MAX {
+                pi = star_pi;
+                star_ti += 1;
+                ti = star_ti;
+            } else {
+                return false;
+            }
+        }
+
+        while pi < p.len() && p[pi] == b'*' {
+            pi += 1;
+        }
+        pi == p.len()
+    }
+
+    fn segments_match(pattern_segs: &[String], path_segs: &[&str], anchored: bool, dir_only: bool) -> bool {
+        if pattern_segs.is_empty() || path_segs.is_empty() {
+            return false;
+        }
+        if anchored {
+            if pattern_segs.len() > path_segs.len() {
+                return false;
+            }
+            for (pi, seg) in pattern_segs.iter().enumerate() {
+                if !glob_match(seg, path_segs[pi]) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            let double_star = pattern_segs.iter().any(|s| s == "**");
+            if double_star {
+                return double_star_match(pattern_segs, path_segs);
+            }
+            if dir_only {
+                if pattern_segs.len() > path_segs.len() {
+                    return false;
+                }
+                return pattern_segs.iter().enumerate().all(|(pi, p)| glob_match(p, path_segs[pi]));
+            }
+            if pattern_segs.len() > path_segs.len() {
+                return false;
+            }
+            let start = path_segs.len() - pattern_segs.len();
+            pattern_segs.iter().zip(path_segs[start..].iter()).all(|(p, t)| glob_match(p, t))
+        }
+    }
+
+    fn double_star_match(pattern_segs: &[String], path_segs: &[&str]) -> bool {
+        if pattern_segs.is_empty() {
+            return path_segs.is_empty();
+        }
+        if pattern_segs[0] == "**" {
+            if double_star_match(&pattern_segs[1..], path_segs) {
+                return true;
+            }
+            if !path_segs.is_empty() {
+                return double_star_match(pattern_segs, &path_segs[1..]);
+            }
+            return false;
+        }
+        if path_segs.is_empty() {
+            return false;
+        }
+        if glob_match(&pattern_segs[0], path_segs[0]) {
+            return double_star_match(&pattern_segs[1..], &path_segs[1..]);
+        }
+        false
     }
 
     impl LeakIgnore {
-        pub fn is_ignored(&self, _path: &str) -> bool {
-            false
+        /// Checks if a repo-relative path should be ignored.
+        pub fn is_ignored(&self, path: &str) -> bool {
+            let normalized = path.replace('\\', "/");
+            let path_segs: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+            let mut ignored = false;
+
+            for pat in &self.patterns {
+                if segments_match(&pat.segments, &path_segs, pat.anchored, pat.dir_only) {
+                    ignored = !pat.negated;
+                }
+            }
+
+            ignored
         }
     }
 }
 
 pub mod secrets {
     use std::fmt;
+
+    const MAX_SCAN_BYTES: usize = 1_048_576;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum ScanTarget {
@@ -2596,17 +3084,207 @@ pub mod secrets {
 
     impl std::error::Error for ScannerError {}
 
-    pub fn run(
-        _repo: &crate::repo::Repo,
-        _target: ScanTarget,
+    /// Scans text data line-by-line for secret patterns.
+    pub fn scan_text(file: &str, path: &str, data: &[u8]) -> Vec<Finding> {
+        let is_binary = {
+            let check_len = data.len().min(8000);
+            data[..check_len].contains(&0u8)
+        };
+
+        if is_binary && !is_text_extension(path) {
+            let hits = crate::patterns::detect(path);
+            return hits.into_iter().map(|h| Finding {
+                kind: h.kind.to_string(),
+                file: file.to_string(),
+                line: 0,
+                redacted: crate::output::redact(h.value),
+            }).collect();
+        }
+
+        let text = match std::str::from_utf8(data) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut findings = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            let hits = crate::patterns::detect(line);
+            for h in hits {
+                findings.push(Finding {
+                    kind: h.kind.to_string(),
+                    file: file.to_string(),
+                    line: i + 1,
+                    redacted: crate::output::redact(h.value),
+                });
+            }
+        }
+
+        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.sort_by_key(|f| f.line);
+        findings
+    }
+
+    fn is_text_extension(path: &str) -> bool {
+        let lower = path.to_ascii_lowercase();
+        let text_exts = [
+            ".txt", ".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",
+            ".toml", ".md", ".sh", ".go", ".c", ".h", ".java", ".rb", ".php", ".xml",
+            ".html", ".css", ".sql", ".csv", ".cfg", ".conf", ".ini", ".env",
+            ".gitignore", ".leakignore", ".lock", ".log", ".toml", ".nix",
+            ".mk", ".makefile", ".dockerfile", ".docker",
+        ];
+        text_exts.iter().any(|ext| lower.ends_with(ext))
+    }
+
+    fn resolve_file_in_tree(
+        repo: &crate::repo::Repo,
+        tree_oid: &crate::objects::Oid,
+        path: &str,
+    ) -> Result<Option<crate::objects::Oid>, crate::objects::ObjError> {
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        resolve_in_tree(repo, tree_oid, &segments)
+    }
+
+    fn resolve_in_tree(
+        repo: &crate::repo::Repo,
+        tree_oid: &crate::objects::Oid,
+        segments: &[&str],
+    ) -> Result<Option<crate::objects::Oid>, crate::objects::ObjError> {
+        if segments.is_empty() {
+            return Ok(None);
+        }
+        let entries = crate::objects::load_tree(repo, tree_oid)?;
+        let target = segments[0];
+        for entry in &entries {
+            let name = String::from_utf8_lossy(&entry.name);
+            if name.as_ref() == target {
+                if segments.len() == 1 {
+                    return Ok(Some(entry.oid));
+                }
+                if entry.mode == "040000" || entry.mode == "40000" {
+                    return resolve_in_tree(repo, &entry.oid, &segments[1..]);
+                }
+                return Ok(None);
+            }
+        }
+        Ok(None)
+    }
+
+    fn scan_worktree(repo: &crate::repo::Repo, ignore: &crate::leakignore::LeakIgnore) -> Result<Vec<Finding>, ScannerError> {
+        let mut findings = Vec::new();
+        walk_dir(repo, &repo.work_dir.clone(), &repo.work_dir, ignore, &mut findings)?;
+        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        Ok(findings)
+    }
+
+    fn walk_dir(
+        repo: &crate::repo::Repo,
+        dir: &std::path::Path,
+        work_dir: &std::path::Path,
+        ignore: &crate::leakignore::LeakIgnore,
+        findings: &mut Vec<Finding>,
+    ) -> Result<(), ScannerError> {
+        let entries = std::fs::read_dir(dir).map_err(ScannerError::Walk)?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            if path.is_dir() {
+                if name == ".git" {
+                    continue;
+                }
+                walk_dir(repo, &path, work_dir, ignore, findings)?;
+            } else if path.is_file() {
+                let rel = path.strip_prefix(work_dir).unwrap_or(&path);
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                if ignore.is_ignored(&rel_str) {
+                    continue;
+                }
+                let meta = std::fs::metadata(&path).map_err(ScannerError::Walk)?;
+                if meta.len() > MAX_SCAN_BYTES as u64 {
+                    continue;
+                }
+                let data = std::fs::read(&path).map_err(ScannerError::Walk)?;
+                let file_str = path.to_string_lossy().to_string();
+                let mut f = scan_text(&file_str, &rel_str, &data);
+                findings.append(&mut f);
+            }
+        }
+        Ok(())
+    }
+
+    fn scan_staged(repo: &crate::repo::Repo) -> Result<Vec<Finding>, ScannerError> {
+        let entries = crate::index::staged_entries(repo).map_err(ScannerError::Index)?;
+        let mut findings = Vec::new();
+        for entry in &entries {
+            match crate::objects::load_blob(repo, &entry.oid) {
+                Ok(data) => {
+                    let mut f = scan_text(&entry.path, &entry.path, &data);
+                    findings.append(&mut f);
+                }
+                Err(_) => continue,
+            }
+        }
+        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        Ok(findings)
+    }
+
+    fn scan_since(repo: &crate::repo::Repo, refish: &str) -> Result<Vec<Finding>, ScannerError> {
+        let from_oid = crate::repo::resolve_refish(repo, refish).map_err(ScannerError::Repo)?;
+        let to_oid = crate::repo::resolve_refish(repo, "HEAD").map_err(ScannerError::Repo)?;
+        let changed = crate::graph::changed_files_between(repo, &from_oid, &to_oid).map_err(ScannerError::Obj)?;
+        let to_commit = crate::objects::load_commit(repo, &to_oid).map_err(ScannerError::Obj)?;
+        scan_commit_files(repo, &to_commit.tree, &changed)
+    }
+
+    fn scan_commit(repo: &crate::repo::Repo, refish: &str) -> Result<Vec<Finding>, ScannerError> {
+        let commit_oid = crate::repo::resolve_refish(repo, refish).map_err(ScannerError::Repo)?;
+        let commit = crate::objects::load_commit(repo, &commit_oid).map_err(ScannerError::Obj)?;
+        let files = crate::graph::files_in_commit(repo, &commit_oid).map_err(ScannerError::Obj)?;
+        scan_commit_files(repo, &commit.tree, &files)
+    }
+
+    fn scan_commit_files(
+        repo: &crate::repo::Repo,
+        tree_oid: &crate::objects::Oid,
+        files: &[String],
     ) -> Result<Vec<Finding>, ScannerError> {
-        Ok(Vec::new())
+        let mut findings = Vec::new();
+        for file_path in files {
+            match resolve_file_in_tree(repo, tree_oid, file_path) {
+                Ok(Some(blob_oid)) => {
+                    match crate::objects::load_blob(repo, &blob_oid) {
+                        Ok(data) => {
+                            let mut f = scan_text(file_path, file_path, &data);
+                            findings.append(&mut f);
+                        }
+                        Err(_) => continue,
+                    }
+                }
+                _ => continue,
+            }
+        }
+        findings.dedup_by(|a, b| a.kind == b.kind && a.file == b.file && a.line == b.line && a.redacted == b.redacted);
+        findings.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        Ok(findings)
     }
 
-    pub fn scan_text(_file: &str, _path: &str, _data: &[u8]) -> Vec<Finding> {
-        Vec::new()
+    /// Runs the secret scanner against the given target.
+    pub fn run(
+        repo: &crate::repo::Repo,
+        target: ScanTarget,
+    ) -> Result<Vec<Finding>, ScannerError> {
+        let ignore = crate::leakignore::load(repo).map_err(ScannerError::Leak)?;
+        match target {
+            ScanTarget::Worktree => scan_worktree(repo, &ignore),
+            ScanTarget::Staged => scan_staged(repo),
+            ScanTarget::Since(refish) => scan_since(repo, &refish),
+            ScanTarget::Commit(refish) => scan_commit(repo, &refish),
+        }
     }
 
+    /// Formats findings into a human-readable report.
     pub fn human_report(findings: &[Finding]) -> String {
         if findings.is_empty() {
             "No secrets detected.\n".to_string()
@@ -2629,6 +3307,7 @@ pub mod secrets {
         }
     }
 
+    /// Formats findings into a JSON report.
     pub fn json_report(findings: &[Finding]) -> String {
         let mut out = String::from("{\"findings\":[");
         for (i, f) in findings.iter().enumerate() {
@@ -3842,6 +4521,464 @@ mod tests {
         fs::create_dir_all(&pack_dir).unwrap();
         let loaded = crate::objects::load_blob(&repo, &base_oid).unwrap();
         assert_eq!(loaded, base_content);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn entropy_empty_zero() {
+        assert_eq!(crate::entropy::shannon_bits(b""), 0.0);
+    }
+
+    #[test]
+    fn entropy_uniform_max() {
+        let data = vec![b'A'; 100];
+        let h = crate::entropy::shannon_bits(&data);
+        assert!((h - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn entropy_low_word() {
+        let h = crate::entropy::shannon_bits(b"hello");
+        assert!(h < 3.0);
+    }
+
+    #[test]
+    fn is_high_entropy_random() {
+        let s = "a8Fj3kL9xQ2mP7nR";
+        assert!(crate::entropy::is_high_entropy(s));
+    }
+
+    #[test]
+    fn is_high_entropy_short_rejected() {
+        assert!(!crate::entropy::is_high_entropy("abc"));
+    }
+
+    #[test]
+    fn aws_key_detected() {
+        let hits = crate::patterns::detect("const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "aws-access-key");
+    }
+
+    #[test]
+    fn github_token_detected() {
+        let hits = crate::patterns::detect("token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "github-token");
+    }
+
+    #[test]
+    fn private_key_detected() {
+        let hits = crate::patterns::detect("-----BEGIN RSA PRIVATE KEY-----");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "private-key");
+    }
+
+    #[test]
+    fn jwt_detected() {
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+        let hits = crate::patterns::detect(jwt);
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "jwt");
+    }
+
+    #[test]
+    fn basic_auth_detected() {
+        let hits = crate::patterns::detect("Authorization: Basic dXNlcjpwYXNzd29yZA==");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "auth-header");
+    }
+
+    #[test]
+    fn key_value_high_entropy() {
+        let hits = crate::patterns::detect("password = a8Fj3kL9xQ2mP7nR");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].kind, "high-entropy-key");
+    }
+
+    #[test]
+    fn whitelisted_example_ignored() {
+        let hits = crate::patterns::detect("password=changeme");
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn no_hit_normal_line() {
+        let hits = crate::patterns::detect("println!(\"hello\");");
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn single_line_no_multiline_false_pos() {
+        let hits = crate::patterns::detect("pub fn");
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn empty_ignores_nothing() {
+        let dir = testutil::unique_tempdir("li_empty");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(!ignore.is_ignored("foo.txt"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn star_ignores_segment() {
+        let dir = testutil::unique_tempdir("li_star");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "*.log\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(ignore.is_ignored("foo.log"));
+        assert!(!ignore.is_ignored("foo.txt"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn doublestar_ignores_path() {
+        let dir = testutil::unique_tempdir("li_dstar");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "build/**\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(ignore.is_ignored("build/out/foo"));
+        assert!(!ignore.is_ignored("src/main.rs"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn negation_reincludes() {
+        let dir = testutil::unique_tempdir("li_neg");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "*.log\n!important.log\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(!ignore.is_ignored("important.log"));
+        assert!(ignore.is_ignored("other.log"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn comment_and_blank() {
+        let dir = testutil::unique_tempdir("li_comm");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "# this is a comment\n\n*.tmp\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(ignore.is_ignored("foo.tmp"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn anchored_prefix_only_root() {
+        let dir = testutil::unique_tempdir("li_anch");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "/vendor/\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(ignore.is_ignored("vendor/lib"));
+        assert!(!ignore.is_ignored("src/vendor/lib"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dir_only_pattern() {
+        let dir = testutil::unique_tempdir("li_dir");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "tmp/\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let ignore = crate::leakignore::load(&repo).unwrap();
+        assert!(ignore.is_ignored("tmp/foo"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_text_aws() {
+        let data = b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n";
+        let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].kind, "aws-access-key");
+    }
+
+    #[test]
+    fn scan_text_multiline_no_bleed() {
+        let data = b"line one\nconst AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\nline three\n";
+        let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].line, 2);
+    }
+
+    #[test]
+    fn binary_detected_skips_body() {
+        let mut data = vec![0u8; 100];
+        data[50] = 0x00;
+        data[10] = b'A';
+        let findings = crate::secrets::scan_text("test.bin", "test.bin", &data);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn binary_filename_hit_reported() {
+        let mut data = vec![b'x'; 100];
+        data[50] = 0x00;
+        let findings = crate::secrets::scan_text(
+            "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl.bin",
+            "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl.bin",
+            &data,
+        );
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].line, 0);
+    }
+
+    #[test]
+    fn worktree_finds_secret() {
+        let dir = testutil::unique_tempdir("wt_secret");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join("config.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
+        assert!(!findings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_respects_ignore() {
+        let dir = testutil::unique_tempdir("wt_ignore");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(dir.join(".leakignore"), "*.log\n").unwrap();
+        fs::write(dir.join("secret.log"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
+        assert!(findings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_skips_gitdir() {
+        let dir = testutil::unique_tempdir("wt_gitdir");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(git_dir.join("objects")).unwrap();
+        fs::write(git_dir.join("secret.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir: git_dir.clone() };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Worktree).unwrap();
+        assert!(findings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn line_numbers_sequential() {
+        let data = b"line1\nconst AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\nline3\nconst token = \"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl\"\n";
+        let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
+        assert!(findings.len() >= 2);
+        assert_eq!(findings[0].line, 2);
+        assert_eq!(findings[1].line, 4);
+    }
+
+    #[test]
+    fn dedup_findings() {
+        let data = b"const key = \"AKIAIOSFODNN7EXAMPLE\" and \"AKIAIOSFODNN7EXAMPLE\"\n";
+        let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
+        let aws_count = findings.iter().filter(|f| f.kind == "aws-access-key").count();
+        assert!(aws_count >= 1);
+    }
+
+    #[test]
+    fn findings_sorted_by_line() {
+        let data = b"line1\nconst token = \"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl\"\nline3\nconst AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n";
+        let findings = crate::secrets::scan_text("test.rs", "test.rs", data);
+        for i in 1..findings.len() {
+            assert!(findings[i - 1].line <= findings[i].line);
+        }
+    }
+
+    #[test]
+    fn human_report_shape() {
+        let findings = vec![crate::secrets::Finding {
+            kind: "aws-access-key".to_string(),
+            file: "test.rs".to_string(),
+            line: 1,
+            redacted: "AKIA…MPLE".to_string(),
+        }];
+        let report = crate::secrets::human_report(&findings);
+        assert!(report.contains("aws-access-key"));
+        assert!(report.contains("test.rs:1"));
+    }
+
+    #[test]
+    fn json_report_schema() {
+        let findings = vec![crate::secrets::Finding {
+            kind: "aws-access-key".to_string(),
+            file: "test.rs".to_string(),
+            line: 1,
+            redacted: "AKIA…MPLE".to_string(),
+        }];
+        let json = crate::secrets::json_report(&findings);
+        assert!(json.starts_with("{\"findings\":["));
+        assert!(json.contains("\"kind\":\"aws-access-key\""));
+        assert!(json.contains("\"file\":\"test.rs\""));
+        assert!(json.contains("\"line\":1"));
+    }
+
+    #[test]
+    fn json_escape_round_trip() {
+        let s = "hello \"world\" \\ \n \t";
+        let escaped = crate::output::json_escape(s);
+        assert!(escaped.contains("\\n"));
+        assert!(escaped.contains("\\t"));
+        assert!(escaped.contains("\\\\"));
+    }
+
+    #[test]
+    fn exit_code_contract_no_findings() {
+        let findings: Vec<crate::secrets::Finding> = Vec::new();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn staged_finds_secret() {
+        let dir = testutil::unique_tempdir("staged_sec");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        let secret_content = b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n";
+        let blob_oid = testutil::write_loose_object(&dir, "blob", secret_content);
+        let mut tree_data = Vec::new();
+        tree_data.extend_from_slice(b"100644 secret.txt\0");
+        tree_data.extend_from_slice(&blob_oid.0);
+        let tree_oid = testutil::write_loose_object(&dir, "tree", &tree_data);
+        let commit_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!("tree {}\n\ninit\n", tree_oid.to_hex()).as_bytes(),
+        );
+        fs::write(git_dir.join("HEAD"), format!("ref: refs/heads/main\n")).unwrap();
+        fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
+        let mut index_data = Vec::new();
+        index_data.extend_from_slice(b"DIRC");
+        index_data.extend_from_slice(&2u32.to_be_bytes());
+        index_data.extend_from_slice(&1u32.to_be_bytes());
+        index_data.extend_from_slice(&[0u8; 40]);
+        index_data.extend_from_slice(&blob_oid.0);
+        index_data.extend_from_slice(&[0u8; 2]);
+        index_data.extend_from_slice(b"secret.txt\0");
+        index_data.extend_from_slice(&[0u8; 7]);
+        fs::write(git_dir.join("index"), &index_data).unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Staged).unwrap();
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].kind, "aws-access-key");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn staged_ignores_unstaged_changes() {
+        let dir = testutil::unique_tempdir("staged_unst");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let clean_content = b"no secrets here\n";
+        let blob_oid = testutil::write_loose_object(&dir, "blob", clean_content);
+        let mut tree_data = Vec::new();
+        tree_data.extend_from_slice(b"100644 secret.txt\0");
+        tree_data.extend_from_slice(&blob_oid.0);
+        let tree_oid = testutil::write_loose_object(&dir, "tree", &tree_data);
+        let commit_oid = testutil::write_loose_object(
+            &dir,
+            "commit",
+            format!("tree {}\n\ninit\n", tree_oid.to_hex()).as_bytes(),
+        );
+        fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
+        let mut index_data = Vec::new();
+        index_data.extend_from_slice(b"DIRC");
+        index_data.extend_from_slice(&2u32.to_be_bytes());
+        index_data.extend_from_slice(&1u32.to_be_bytes());
+        index_data.extend_from_slice(&[0u8; 40]);
+        index_data.extend_from_slice(&blob_oid.0);
+        index_data.extend_from_slice(&[0u8; 2]);
+        index_data.extend_from_slice(b"secret.txt\0");
+        index_data.extend_from_slice(&[0u8; 7]);
+        fs::write(git_dir.join("index"), &index_data).unwrap();
+        fs::write(dir.join("secret.txt"), "const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Staged).unwrap();
+        assert!(findings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn since_scans_committed() {
+        let dir = testutil::unique_tempdir("since_sc");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let clean_blob = testutil::write_loose_object(&dir, "blob", b"clean\n");
+        let mut t1 = Vec::new();
+        t1.extend_from_slice(b"100644 a.txt\0");
+        t1.extend_from_slice(&clean_blob.0);
+        let tree1 = testutil::write_loose_object(&dir, "tree", &t1);
+        let c1 = testutil::write_loose_object(&dir, "commit", format!("tree {}\n\nC1\n", tree1.to_hex()).as_bytes());
+        let secret_blob = testutil::write_loose_object(&dir, "blob", b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n");
+        let mut t2 = Vec::new();
+        t2.extend_from_slice(b"100644 a.txt\0");
+        t2.extend_from_slice(&clean_blob.0);
+        t2.extend_from_slice(b"100644 b.txt\0");
+        t2.extend_from_slice(&secret_blob.0);
+        let tree2 = testutil::write_loose_object(&dir, "tree", &t2);
+        let c2 = testutil::write_loose_object(&dir, "commit", format!("tree {}\nparent {}\n\nC2\n", tree2.to_hex(), c1.to_hex()).as_bytes());
+        fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", c2.to_hex())).unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Since(c1.to_hex())).unwrap();
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].kind, "aws-access-key");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commit_target_works() {
+        let dir = testutil::unique_tempdir("commit_t");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let secret_blob = testutil::write_loose_object(&dir, "blob", b"const AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\n");
+        let mut tree = Vec::new();
+        tree.extend_from_slice(b"100644 secret.txt\0");
+        tree.extend_from_slice(&secret_blob.0);
+        let tree_oid = testutil::write_loose_object(&dir, "tree", &tree);
+        let commit_oid = testutil::write_loose_object(&dir, "commit", format!("tree {}\n\nC1\n", tree_oid.to_hex()).as_bytes());
+        fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", commit_oid.to_hex())).unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let findings = crate::secrets::run(&repo, crate::secrets::ScanTarget::Commit(commit_oid.to_hex())).unwrap();
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].kind, "aws-access-key");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn root_resolve_head_tilde() {
+        let dir = testutil::unique_tempdir("ht_0");
+        let git_dir = dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        let c1 = testutil::write_loose_object(&dir, "commit", b"tree 0000000000000000000000000000000000000000\n\nC1\n");
+        fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        fs::write(git_dir.join("refs/heads/main"), format!("{}\n", c1.to_hex())).unwrap();
+        fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let repo = crate::repo::Repo { work_dir: dir.clone(), git_dir };
+        let oid = crate::repo::resolve_refish(&repo, "HEAD~0").unwrap();
+        assert_eq!(oid, c1);
         let _ = fs::remove_dir_all(&dir);
     }
 }

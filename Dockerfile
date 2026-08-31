@@ -9,7 +9,8 @@ WORKDIR /src
 COPY . .
 RUN mkdir -p /usr/local/bin && \
     nix build .#default && \
-    cp result/bin/* /usr/local/bin/
+    cp result/bin/* /usr/local/bin/ && \
+    nix develop --command true
 
 # Default command
 CMD ["git-janitor"]

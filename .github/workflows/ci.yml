@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - release
+
+jobs:
+  validate:
+    name: Validate (Podman + Nix)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Podman is installed
+        run: |
+          podman --version
+
+      - name: Build container & compile with Nix
+        run: |
+          make build
+
+      - name: Run test suite & Nix flake checks
+        run: |
+          make test
+
+      - name: Check code formatting
+        run: |
+          make fmt-check
+
+      - name: Run Clippy linter
+        run: |
+          make clippy
+
+      - name: Extract and verify native binary
+        run: |
+          make extract-binary
+          ./target/bin/git-janitor --help
