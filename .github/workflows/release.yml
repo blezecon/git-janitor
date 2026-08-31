@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release
+    paths:
+      - 'Cargo.toml'
+  workflow_dispatch:
 
 permissions:
   contents: write
