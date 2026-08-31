@@ -106,6 +106,11 @@ if ($Uninstall) {
     return
 }
 
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Error "Git is not installed on this system. Please install Git before installing git-janitor."
+    return
+}
+
 Write-Header
 
 # Detect Architecture

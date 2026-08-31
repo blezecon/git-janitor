@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/blezecon/git-janitor/release/instal
 ```
 
 ### Windows (PowerShell)
-```powershell
+```bash
 irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1 | iex
 ```
 
@@ -192,7 +192,7 @@ curl -fsSL https://raw.githubusercontent.com/blezecon/git-janitor/release/instal
 *(or manually remove `~/.local/bin/git-janitor` and `~/.local/bin/git-jan`)*
 
 ### Windows (PowerShell)
-```powershell
+```sh
 irm https://raw.githubusercontent.com/blezecon/git-janitor/release/install.ps1 | iex -args "-Uninstall"
 ```
 

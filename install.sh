@@ -188,6 +188,13 @@ configure_path() {
     esac
 }
 
+# Check Git prerequisite
+check_git() {
+    if ! command -v git >/dev/null 2>&1; then
+        error "Git is not installed on this system. Please install Git before installing git-janitor."
+    fi
+}
+
 # Main installer routine
 main() {
     setup_colors
@@ -205,6 +212,8 @@ main() {
                 ;;
         esac
     done
+
+    check_git
 
     printf "\n${BOLD}${BLUE}🧹 git-janitor (git-jan) Installer${NC}\n\n"
 
