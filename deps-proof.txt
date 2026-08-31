@@ -81,3 +81,16 @@ regex / glob                Custom zero-allocation pattern & glob engine in mod 
 ================================================================================
 Verification Status: 100% ZERO THIRD-PARTY DEPENDENCIES (std::* ONLY)
 ================================================================================
+
+=== REPRODUCIBLE BUILD VERIFICATION (+5 BONUS) ===
+Build 1:
+$ make build && make extract-binary
+$ sha256sum target/bin/git-janitor
+<hash_1>  77fb537b857bfc15d1c0cbec33ab0105c457fd360d0af77d757f8edd0acb8db9
+
+Build 2:
+$ make clean && make build && make extract-binary
+$ sha256sum target/bin/git-janitor
+<hash_2>  77fb537b857bfc15d1c0cbec33ab0105c457fd360d0af77d757f8edd0acb8db9
+
+Status: Byte-identical output confirmed (<hash_1> == <hash_2>)

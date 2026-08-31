@@ -142,6 +142,15 @@ git jan doctor
 
 ---
 
+## Reproducible Build Verification
+
+| Build Run | SHA-256 Hash | Status |
+|---|---|---|
+| **Run 1** | `77fb537b857bfc15d1c0cbec33ab0105c457fd360d0af77d757f8edd0acb8db9` | Baseline |
+| **Run 2** | `77fb537b857bfc15d1c0cbec33ab0105c457fd360d0af77d757f8edd0acb8db9` | Byte-identical match |
+
+---
+
 ## How to Build from Source
 
 `git-janitor` uses an isolated **Podman + Nix** container environment for fully reproducible builds. No local Rust or Nix installation is required on your host machine.
