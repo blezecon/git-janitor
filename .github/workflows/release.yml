@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - release
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cross-Platform Release Build (Podman + Nix)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Podman is installed
+        run: |
+          podman --version
+
+      - name: Determine release version from Cargo.toml
+        id: version
+        run: |
+          RAW_VERSION=$(grep '^version =' Cargo.toml | head -1 | cut -d '"' -f 2)
+          echo "VERSION=v${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Target release version: v${RAW_VERSION}"
+
+      - name: Build container image
+        run: |
+          make build
+
+      - name: Run test suite & Nix flake checks
+        run: |
+          make test
+
+      - name: Build all targets and package release archives
+        run: |
+          make release VERSION=${{ steps.version.outputs.VERSION }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-linux-x86_64.tar.gz
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-linux-aarch64.tar.gz
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-windows-x86_64.zip
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-windows-aarch64.zip
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-macos-x86_64.tar.gz
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-macos-aarch64.tar.gz
+            target/dist/git-janitor-${{ steps.version.outputs.VERSION }}-freebsd-x86_64.tar.gz
+            target/dist/SHA256SUMS
+          generate_release_notes: true
